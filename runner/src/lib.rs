@@ -36,23 +36,41 @@ pub struct RegisteredITest {
 }
 inventory::collect!(RegisteredITest);
 
-pub type SetUpResult = Result<Box<dyn TearDown + 'static>, ()>;
+pub type SetUpResult = Result<Box<dyn TearDown + 'static>, Box<dyn std::error::Error>>;
+
+pub trait Context {
+    fn get_param(&self, key: &str) -> Result<String, ()>;
+    fn set_param(&self, key: &str, value: &str);
+}
+
+#[derive(Default)]
+struct BasicContext;
+
+impl Context for BasicContext {
+    fn get_param(&self, key: &str) -> Result<String, ()> {
+        todo!()
+    }
+
+    fn set_param(&self, key: &str, value: &str) {
+        todo!()
+    }
+}
 
 pub trait SetUp {
-    fn set_up(&mut self) -> SetUpResult;
+    fn set_up(&mut self, ctx: &mut Box<dyn Context>) -> SetUpResult;
     fn name(&self) -> &str;
 }
 
 pub trait TearDown {
-    fn tear_down(&self) -> Result<(), ()>;
+    fn tear_down(&self) -> Result<(), Box<dyn std::error::Error>>;
 }
 
 struct Component<'s> {
     max_name_len: usize,
     set_up: &'s mut Box<dyn SetUp>,
-    set_up_err: Option<()>,
+    set_up_err: Option<Box<dyn std::error::Error>>,
     tear_down: Option<Box<dyn TearDown + 'static>>,
-    tear_down_err: Option<()>,
+    tear_down_err: Option<Box<dyn std::error::Error>>,
 }
 
 impl<'s> Component<'s> {
@@ -81,11 +99,11 @@ impl<'s> Component<'s> {
         println!("{} ({})", status, format_duration(elapsed));
     }
 
-    fn set_up(&mut self) -> Outcome {
+    fn set_up(&mut self, ctx: &mut Box<dyn Context>) -> Outcome {
         self.log_action_start("set up");
 
         let start = Instant::now();
-        let outcome = match self.set_up.set_up() {
+        let outcome = match self.set_up.set_up(ctx) {
             Ok(tear_down) => {
                 self.tear_down = Some(tear_down);
                 Outcome::Ok
@@ -140,8 +158,9 @@ impl<'s> Components<'s> {
     }
 
     fn run_component_set_ups(&mut self) -> Outcome {
+        let mut ctx: Box<dyn Context> = Box::new(BasicContext::default());
         for component in &mut self.components {
-            if component.set_up() != Outcome::Ok {
+            if component.set_up(&mut ctx) != Outcome::Ok {
                 return Outcome::Failed;
             }
         }

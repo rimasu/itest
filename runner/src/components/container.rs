@@ -1,6 +1,6 @@
 use testcontainers::{Container, ContainerRequest, GenericImage, Image, runners::SyncRunner};
 
-use crate::{SetUp, SetUpResult, TearDown};
+use crate::{Context, SetUp, SetUpResult, TearDown};
 
 pub struct ContainerSetUp {
     name: String,
@@ -18,12 +18,10 @@ impl ContainerSetUp {
 }
 
 impl SetUp for ContainerSetUp {
-    fn set_up(&mut self) -> SetUpResult {
+    fn set_up(&mut self, _ctx: &mut Box<dyn Context>) -> SetUpResult {
         let image = self.image.take().unwrap();
-        match image.start() {
-            Ok(container) => Ok(Box::new(ContainerComponent { container })),
-            Err(e) => Err(()),
-        }
+        let container = image.start()?;
+        Ok(Box::new(ContainerComponent { container }))
     }
 
     fn name(&self) -> &str {
@@ -36,8 +34,8 @@ pub struct ContainerComponent {
 }
 
 impl TearDown for ContainerComponent {
-    fn tear_down(&self) -> Result<(), ()> {
-        self.container.stop().unwrap();
+    fn tear_down(&self) -> Result<(), Box<dyn std::error::Error>> {
+        self.container.stop()?;
         Ok(())
     }
 }
