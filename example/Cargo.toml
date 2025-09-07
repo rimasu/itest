@@ -1,0 +1,14 @@
+[package]
+name = "example"
+version = "0.1.0"
+edition = "2024"
+
+
+[[test]]
+name = "itest"
+path = "itest/main.rs"
+harness = false
+
+[dependencies]
+itest_macros = { path = "../macros" }
+itest_runner = { path = "../runner" }
