@@ -1,46 +1,10 @@
-use itest_macros::itest;
-use itest_runner::{SetUp, TearDown, run_all_tests};
-
-struct RedisSetup;
-struct Redis;
-
-impl SetUp for RedisSetup {
-    fn set_up(&self) -> Result<Box<dyn itest_runner::TearDown>, ()> {
-        Ok(Box::new(Redis))
-        // Err(())
-    }
-
-    fn name(&self) -> &str {
-        "redis"
-    }
-}
-
-impl TearDown for Redis {
-    fn tear_down(&self) -> Result<(), ()> {
-        Ok(())
-    }
-}
-
-struct PostgresSetup;
-
-struct Postgres;
-
-impl SetUp for PostgresSetup {
-    fn set_up(&self) -> Result<Box<dyn itest_runner::TearDown>, ()> {
-          Ok(Box::new(Postgres))
-        //Err(())
-    }
-
-    fn name(&self) -> &str {
-        "postgres"
-    }
-}
-
-impl TearDown for Postgres {
-    fn tear_down(&self) -> Result<(), ()> {
-        Ok(())
-    }
-}
+use itest_runner::components::container::ContainerSetUp;
+use itest_runner::{ITest, itest};
+use testcontainers::ContainerRequest;
+use testcontainers::{
+    GenericImage, ImageExt,
+    core::{IntoContainerPort, WaitFor},
+};
 
 #[itest]
 fn test_two() {}
@@ -48,6 +12,25 @@ fn test_two() {}
 #[itest]
 fn test_one_with_a_long_name() {}
 
+fn set_up_redis1() -> ContainerRequest<GenericImage> {
+    GenericImage::new("redis", "7.2.4")
+        .with_exposed_port(6379.tcp())
+        .with_wait_for(WaitFor::message_on_stdout("Ready to accept connections"))
+        .with_network("bridge")
+        .with_env_var("DEBUG", "1")
+}
+
+fn set_up_redis2() -> ContainerRequest<GenericImage> {
+    GenericImage::new("redis", "7.2.4")
+        .with_exposed_port(6379.tcp())
+        .with_wait_for(WaitFor::message_on_stdout("Ready to accept connections"))
+        .with_network("bridge")
+        .with_env_var("DEBUG", "1")
+}
+
 fn main() {
-    run_all_tests(&[Box::new(PostgresSetup), Box::new(RedisSetup)]);
+    ITest::default()
+        .with(ContainerSetUp::new(set_up_redis1()))
+        .with(ContainerSetUp::new(set_up_redis2()))
+        .run();
 }

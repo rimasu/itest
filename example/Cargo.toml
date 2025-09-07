@@ -10,5 +10,5 @@ path = "itest/main.rs"
 harness = false
 
 [dependencies]
-itest_macros = { path = "../macros" }
 itest_runner = { path = "../runner" }
+testcontainers = { version = "0.25.0", features = ["blocking"] }

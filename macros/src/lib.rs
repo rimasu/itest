@@ -1,9 +1,6 @@
 use proc_macro::TokenStream;
 use quote::quote;
 
-
-
-
 #[proc_macro_attribute]
 pub fn itest(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let input_fn: syn::ItemFn = syn::parse(item).unwrap();

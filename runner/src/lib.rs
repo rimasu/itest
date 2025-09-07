@@ -7,6 +7,10 @@ use humantime::format_duration;
 use std::time::Instant;
 
 pub use inventory::{collect, submit};
+pub use itest_macros::itest;
+
+pub mod components;
+
 use libtest_mimic::{Arguments, Conclusion, Trial};
 
 #[derive(Eq, PartialEq, Clone, Copy)]
@@ -35,7 +39,7 @@ inventory::collect!(RegisteredITest);
 pub type SetUpResult = Result<Box<dyn TearDown + 'static>, ()>;
 
 pub trait SetUp {
-    fn set_up(&self) -> SetUpResult;
+    fn set_up(&mut self) -> SetUpResult;
     fn name(&self) -> &str;
 }
 
@@ -45,14 +49,14 @@ pub trait TearDown {
 
 struct Component<'s> {
     max_name_len: usize,
-    set_up: &'s Box<dyn SetUp>,
+    set_up: &'s mut Box<dyn SetUp>,
     set_up_err: Option<()>,
     tear_down: Option<Box<dyn TearDown + 'static>>,
     tear_down_err: Option<()>,
 }
 
 impl<'s> Component<'s> {
-    fn new(set_up: &'s Box<dyn SetUp>, max_name_len: usize) -> Component<'s> {
+    fn new(set_up: &'s mut Box<dyn SetUp>, max_name_len: usize) -> Component<'s> {
         Component {
             max_name_len,
             set_up,
@@ -193,7 +197,7 @@ fn run_tests() -> Conclusion {
     libtest_mimic::run(&args, tests)
 }
 
-fn make_components<'s>(set_ups: &'s [Box<dyn SetUp>]) -> Components<'s> {
+fn make_components<'s>(set_ups: &'s mut [Box<dyn SetUp>]) -> Components<'s> {
     let max_name_len = max_set_up_name_len(set_ups);
 
     let components = set_ups
@@ -204,25 +208,37 @@ fn make_components<'s>(set_ups: &'s [Box<dyn SetUp>]) -> Components<'s> {
     Components { components }
 }
 
-pub fn run_all_tests(set_ups: &[Box<dyn SetUp>]) {
-    let mut components = make_components(set_ups);
+#[derive(Default)]
+pub struct ITest {
+    set_ups: Vec<Box<dyn SetUp>>,
+}
 
-    let set_up_status = components.set_up();
+impl ITest {
+    pub fn with(mut self, set_up: Box<dyn SetUp>) -> Self {
+        self.set_ups.push(set_up);
+        self
+    }
 
-    let conculsion = if set_up_status == Outcome::Ok {
-        Some(run_tests())
-    } else {
-        None
-    };
+    pub fn run(mut self) {
+        let mut components = make_components(&mut self.set_ups);
 
-    let tear_down_status = components.tear_down();
+        let set_up_status = components.set_up();
 
-    println!("\nsummary");
-    println!("  set ups: {}", set_up_status);
-    println!("    tests: TBC");
-    println!("tear down: {}", tear_down_status);
+        let conculsion = if set_up_status == Outcome::Ok {
+            Some(run_tests())
+        } else {
+            None
+        };
 
-    if let Some(conclusion) = conculsion {
-        conclusion.exit();
+        let tear_down_status = components.tear_down();
+
+        println!("\nsummary");
+        println!("  set ups: {}", set_up_status);
+        println!("    tests: TBC");
+        println!("tear down: {}", tear_down_status);
+
+        if let Some(conclusion) = conculsion {
+            conclusion.exit();
+        }
     }
 }
