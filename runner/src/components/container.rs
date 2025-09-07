@@ -18,7 +18,7 @@ impl ContainerSetUp {
 }
 
 impl SetUp for ContainerSetUp {
-    fn set_up(&mut self, _ctx: &mut Box<dyn Context>) -> SetUpResult {
+    fn set_up(&mut self, _ctx: &mut Context) -> SetUpResult {
         let image = self.image.take().unwrap();
         let container = image.start()?;
         Ok(Box::new(ContainerComponent { container }))
@@ -34,7 +34,7 @@ pub struct ContainerComponent {
 }
 
 impl TearDown for ContainerComponent {
-    fn tear_down(&self) -> Result<(), Box<dyn std::error::Error>> {
+    fn tear_down(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         self.container.stop()?;
         Ok(())
     }

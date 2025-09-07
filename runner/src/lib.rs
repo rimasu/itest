@@ -3,13 +3,16 @@ use std::{
     io::{self, Write},
 };
 
-use humantime::format_duration;
 use std::time::Instant;
 
 pub use inventory::{collect, submit};
 pub use itest_macros::itest;
 
 pub mod components;
+
+mod context;
+
+pub use context::{Context, Param};
 
 use libtest_mimic::{Arguments, Conclusion, Trial};
 
@@ -38,31 +41,13 @@ inventory::collect!(RegisteredITest);
 
 pub type SetUpResult = Result<Box<dyn TearDown + 'static>, Box<dyn std::error::Error>>;
 
-pub trait Context {
-    fn get_param(&self, key: &str) -> Result<String, ()>;
-    fn set_param(&self, key: &str, value: &str);
-}
-
-#[derive(Default)]
-struct BasicContext;
-
-impl Context for BasicContext {
-    fn get_param(&self, key: &str) -> Result<String, ()> {
-        todo!()
-    }
-
-    fn set_param(&self, key: &str, value: &str) {
-        todo!()
-    }
-}
-
 pub trait SetUp {
-    fn set_up(&mut self, ctx: &mut Box<dyn Context>) -> SetUpResult;
+    fn set_up(&mut self, ctx: &mut Context) -> SetUpResult;
     fn name(&self) -> &str;
 }
 
 pub trait TearDown {
-    fn tear_down(&self) -> Result<(), Box<dyn std::error::Error>>;
+    fn tear_down(&mut self) -> Result<(), Box<dyn std::error::Error>>;
 }
 
 struct Component<'s> {
@@ -95,11 +80,15 @@ impl<'s> Component<'s> {
     }
 
     fn log_action_end(&self, status: Outcome, start: Instant) {
-        let elapsed = start.elapsed();
-        println!("{} ({})", status, format_duration(elapsed));
+        if status == Outcome::Skipped {
+            println!("{}", status);
+        } else {
+            let elapsed = start.elapsed();
+            println!("{} ({:.02}s)", status, (elapsed.as_millis() as f64) / 1000.0);
+        }
     }
 
-    fn set_up(&mut self, ctx: &mut Box<dyn Context>) -> Outcome {
+    fn set_up(&mut self, ctx: &mut Context) -> Outcome {
         self.log_action_start("set up");
 
         let start = Instant::now();
@@ -122,7 +111,7 @@ impl<'s> Component<'s> {
     fn tear_down(&mut self) -> Outcome {
         self.log_action_start("tear down");
         let start = Instant::now();
-        let outcome = if let Some(tear_down) = &self.tear_down {
+        let outcome = if let Some(tear_down) = &mut self.tear_down {
             match tear_down.tear_down() {
                 Ok(()) => Outcome::Ok,
                 Err(err) => {
@@ -150,18 +139,20 @@ impl<'s> Components<'s> {
         let outcome = self.run_component_set_ups();
         let elapsed = start.elapsed();
         println!(
-            "\nset up: {}. finished in {}",
+            "\nset up: {}. finished in {:.02}s",
             outcome,
-            format_duration(elapsed)
+            (elapsed.as_millis() as f64) / 1000.0
         );
         outcome
     }
 
     fn run_component_set_ups(&mut self) -> Outcome {
-        let mut ctx: Box<dyn Context> = Box::new(BasicContext::default());
+        let mut ctx = Context::default();
         for component in &mut self.components {
             if component.set_up(&mut ctx) != Outcome::Ok {
                 return Outcome::Failed;
+            } else {
+                ctx.log_updated_params();
             }
         }
         Outcome::Ok
@@ -173,9 +164,9 @@ impl<'s> Components<'s> {
         let outcome = self.run_component_tear_downs();
         let elapsed = start.elapsed();
         println!(
-            "\ntear down: {}. finished in {}",
+            "\ntear down: {}. finished in {:.02}s",
             outcome,
-            format_duration(elapsed)
+            (elapsed.as_millis() as f64) / 1000.0
         );
         outcome
     }
@@ -229,10 +220,16 @@ fn make_components<'s>(set_ups: &'s mut [Box<dyn SetUp>]) -> Components<'s> {
 
 #[derive(Default)]
 pub struct ITest {
+    context: Context,
     set_ups: Vec<Box<dyn SetUp>>,
 }
 
 impl ITest {
+    pub fn set(mut self, key: &str, value: &str) -> Self {
+        self.context.set_param(key, value);
+        self
+    }
+
     pub fn with(mut self, set_up: Box<dyn SetUp>) -> Self {
         self.set_ups.push(set_up);
         self

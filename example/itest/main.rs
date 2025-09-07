@@ -1,4 +1,5 @@
 use itest_runner::components::container::ContainerSetUp;
+use itest_runner::components::tempdir::TempDirSetUp;
 use itest_runner::{ITest, itest};
 use testcontainers::ContainerRequest;
 use testcontainers::{
@@ -30,6 +31,8 @@ fn set_up_redis2() -> ContainerRequest<GenericImage> {
 
 fn main() {
     ITest::default()
+        .set("loglevel", "high")
+        .with(TempDirSetUp::new("cfg_dir"))
         .with(ContainerSetUp::new(set_up_redis1()))
         .with(ContainerSetUp::new(set_up_redis2()))
         .run();
