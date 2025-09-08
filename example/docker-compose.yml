@@ -1,0 +1,11 @@
+services:
+  envoy:
+    image: envoyproxy/envoy:v1.33-latest
+    network_mode: host
+    ports:
+      - "8080:8080"  # HTTP/1.1 proxy port
+      - "9901:9901"  # Admin interface
+    volumes:
+      - ./etc/envoy/envoy.yaml:/etc/envoy/envoy.yaml:ro
+ 
+    

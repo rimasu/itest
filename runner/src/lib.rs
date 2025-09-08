@@ -84,7 +84,11 @@ impl<'s> Component<'s> {
             println!("{}", status);
         } else {
             let elapsed = start.elapsed();
-            println!("{} ({:.02}s)", status, (elapsed.as_millis() as f64) / 1000.0);
+            println!(
+                "{} ({:.02}s)",
+                status,
+                (elapsed.as_millis() as f64) / 1000.0
+            );
         }
     }
 
@@ -158,7 +162,7 @@ impl<'s> Components<'s> {
         Outcome::Ok
     }
 
-    fn tear_down(mut self) -> Outcome {
+    fn tear_down(&mut self) -> Outcome {
         println!("\ntearing down {} components", self.components.len());
         let start = Instant::now();
         let outcome = self.run_component_tear_downs();
@@ -174,7 +178,7 @@ impl<'s> Components<'s> {
     fn run_component_tear_downs(&mut self) -> Outcome {
         // we attempt to call all tear down functions - even if some fail.
         let mut all_clean = true;
-        while let Some(mut component) = self.components.pop() {
+        for component in self.components.iter_mut().rev() {
             all_clean &= component.tear_down() != Outcome::Failed
         }
         if all_clean {
@@ -247,6 +251,18 @@ impl ITest {
         };
 
         let tear_down_status = components.tear_down();
+
+        for component in &components.components {
+            if let Some(err) = &component.set_up_err {
+                println!("{} set up failed:\n{}", component.set_up.name(), err);
+            }
+        }
+
+        for component in &components.components {
+            if let Some(err) = &component.tear_down_err {
+                println!("{} tear down failed:\n{}", component.set_up.name(), err);
+            }
+        }
 
         println!("\nsummary");
         println!("  set ups: {}", set_up_status);
