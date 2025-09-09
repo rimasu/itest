@@ -34,9 +34,5 @@ pub async fn server_main() {
         .layer(middleware::from_fn(log_http_version));
 
     let listener = TcpListener::bind("127.0.0.1:3000").await.unwrap();
-
-    println!("Server running on http://127.0.0.1:3000");
-    println!("HTTP version will be logged for each request");
-
     axum::serve(listener, app).await.unwrap();
 }
