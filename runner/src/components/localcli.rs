@@ -1,30 +1,42 @@
 use std::{
+    io,
     path::PathBuf,
-    process::{Child, Command},
+    process::{Command, Output},
 };
 
 use crate::{Context, SetUp, SetUpResult, TearDown};
 
-pub struct LocalRunnerSetUp {
+pub struct LocalCliSetUp {
     name: String,
+    args: Vec<String>,
 }
 
-impl LocalRunnerSetUp {
-    pub fn new(name: &str) -> Box<LocalRunnerSetUp> {
-        Box::new(LocalRunnerSetUp {
+impl LocalCliSetUp {
+    pub fn new(name: &str) -> Box<LocalCliSetUp> {
+        Box::new(LocalCliSetUp {
             name: name.to_owned(),
+            args: Vec::new(),
+        })
+    }
+
+    pub fn with_args(self, args: &[&str]) -> Box<LocalCliSetUp> {
+        Box::new(LocalCliSetUp {
+            name: self.name,
+            args: args.iter().map(|i| i.to_string()).collect(),
         })
     }
 }
 
-impl SetUp for LocalRunnerSetUp {
+impl SetUp for LocalCliSetUp {
     fn set_up(&mut self, _ctx: &mut Context) -> SetUpResult {
         let binary = get_binary_path(&self.name);
-        let child = Command::new(binary).spawn()?;
+        let child = Command::new(binary).args(&self.args).spawn()?;
 
-        Ok(Box::new(LocalRunnerComponent {
+        let output = child.wait_with_output()?.exit_ok()?;
+
+        Ok(Box::new(LocalCliComponent {
             name: self.name.to_owned(),
-            child,
+            output,
         }))
     }
 
@@ -33,14 +45,13 @@ impl SetUp for LocalRunnerSetUp {
     }
 }
 
-pub struct LocalRunnerComponent {
+pub struct LocalCliComponent {
     name: String,
-    child: Child,
+    output: Output,
 }
 
-impl TearDown for LocalRunnerComponent {
+impl TearDown for LocalCliComponent {
     fn tear_down(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        self.child.kill()?;
         Ok(())
     }
 }

@@ -8,7 +8,6 @@ itest_macros = { path = "../macros" }
 inventory = "0.3.21"
 libtest-mimic = "0.8.1"
 
-
 testcontainers = { version = "0.25.0", features = ["blocking"] }
 tempfile = "3.21.0"
 

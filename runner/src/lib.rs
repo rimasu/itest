@@ -1,3 +1,6 @@
+
+#![feature(exit_status_error)]
+
 use std::{
     fmt,
     io::{self, Write},

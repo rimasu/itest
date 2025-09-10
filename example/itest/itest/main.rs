@@ -1,7 +1,8 @@
 use std::path::Path;
 
 use itest_runner::components::container::ContainerSetUp;
-use itest_runner::components::localrunner::LocalRunnerSetUp;
+use itest_runner::components::localcli::LocalCliSetUp;
+use itest_runner::components::localserver::LocalServerSetUp;
 use itest_runner::components::tempdir::TempDirSetUp;
 use itest_runner::{ITest, itest};
 use reqwest::StatusCode;
@@ -28,10 +29,7 @@ fn can_call_server_via_envoy_with_http1() {
     let response = reqwest::blocking::get("http://localhost:8080/").unwrap();
     assert_eq!(StatusCode::OK, response.status());
     let body = response.text().unwrap();
-    assert_eq!(
-        r#"{"message":"Hello, World!"}"#,
-        body
-    );
+    assert_eq!(r#"{"message":"Hello, World!"}"#, body);
 }
 
 fn set_up_redis() -> ContainerRequest<GenericImage> {
@@ -57,12 +55,23 @@ fn set_up_envoy() -> ContainerRequest<GenericImage> {
         .into()
 }
 
+fn set_up_postgres() -> ContainerRequest<GenericImage> {
+    GenericImage::new("postgres", "18rc1")
+        .with_env_var("POSTGRES_USER", "test_user")
+        .with_env_var("POSTGRES_PASSWORD", "test_password1")
+        .with_env_var("POSTGRES_DB", "test_db")
+        .with_network("host")
+        .into()
+}
+
 fn main() {
     ITest::default()
         .set("loglevel", "high")
         .with(TempDirSetUp::new("cfg_dir"))
         .with(ContainerSetUp::new(set_up_redis()))
         .with(ContainerSetUp::new(set_up_envoy()))
-        .with(LocalRunnerSetUp::new("example-server"))
+        .with(ContainerSetUp::new(set_up_postgres()))
+        .with(LocalCliSetUp::new("example-cli").with_args(&["install-schema"]))
+        .with(LocalServerSetUp::new("example-server"))
         .run();
 }
