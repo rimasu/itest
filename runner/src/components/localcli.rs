@@ -28,8 +28,8 @@ impl LocalCliSetUp {
 }
 
 impl SetUp for LocalCliSetUp {
-    fn set_up(&mut self, _ctx: &mut Context) -> SetUpResult {
-        let binary = get_binary_path(&self.name);
+    fn set_up(&mut self, ctx: &mut Context) -> SetUpResult {
+        let binary = ctx.workspace_binary_path(&self.name);
         let child = Command::new(binary).args(&self.args).spawn()?;
 
         let output = child.wait_with_output()?.exit_ok()?;
@@ -56,27 +56,3 @@ impl TearDown for LocalCliComponent {
     }
 }
 
-fn get_binary_path(name: &str) -> PathBuf {
-    // Option 2: Construct from cargo metadata
-    let profile = if cfg!(debug_assertions) {
-        "debug"
-    } else {
-        "release"
-    };
-
-    // Get workspace root
-    let output = Command::new("cargo")
-        .args(&["locate-project", "--workspace", "--message-format=plain"])
-        .output()
-        .expect("Failed to locate workspace");
-
-    let stdout = output.stdout;
-    let workspace_root = String::from_utf8(stdout).expect("Invalid UTF-8");
-
-    let workspace_root = workspace_root.trim().trim_end_matches("/Cargo.toml");
-
-    PathBuf::from(workspace_root)
-        .join("target")
-        .join(profile)
-        .join(name)
-}

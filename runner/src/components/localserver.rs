@@ -18,8 +18,9 @@ impl LocalServerSetUp {
 }
 
 impl SetUp for LocalServerSetUp {
-    fn set_up(&mut self, _ctx: &mut Context) -> SetUpResult {
-        let binary = get_binary_path(&self.name);
+    fn set_up(&mut self, ctx: &mut Context) -> SetUpResult {
+
+        let binary = ctx.workspace_binary_path(&self.name);
         let child = Command::new(binary).spawn()?;
 
         Ok(Box::new(LocalRunnerComponent {

@@ -65,7 +65,7 @@ fn set_up_postgres() -> ContainerRequest<GenericImage> {
 }
 
 fn main() {
-    ITest::default()
+    ITest::new()
         .set("loglevel", "high")
         .with(TempDirSetUp::new("cfg_dir"))
         .with(ContainerSetUp::new(set_up_redis()))

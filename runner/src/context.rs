@@ -1,6 +1,7 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
-    fmt,
+    fmt, fs,
+    path::{Path, PathBuf},
 };
 
 pub struct Param {
@@ -13,13 +14,80 @@ impl fmt::Debug for Param {
     }
 }
 
-#[derive(Default)]
 pub struct Context {
     params: BTreeMap<String, Param>,
     updated_params: BTreeSet<String>,
+    workspace_root_dir: PathBuf,
+    current_component_name: String,
 }
 
 impl Context {
+    pub(crate) fn new(workspace_root_dir: &Path) -> Context {
+        let mut log_dir = workspace_root_dir.to_owned();
+        log_dir.push("target");
+        log_dir.push("itest");
+        log_dir.push("logs");
+        fs::create_dir_all(&log_dir).unwrap();
+        Self {
+            params: BTreeMap::new(),
+            updated_params: BTreeSet::new(),
+            workspace_root_dir: workspace_root_dir.to_path_buf(),
+            current_component_name: "".to_owned(),
+        }
+    }
+
+    pub(crate) fn set_current_component(&mut self, name: &str) {
+        self.current_component_name = name.to_owned();
+    }
+
+    fn clean_component_name(&self) -> String {
+        let clean_name = self.current_component_name.replace("/", "_");
+        clean_name.trim().to_string()
+    }
+
+    fn log_dir(&self) -> PathBuf {
+        let mut log_dir = self.workspace_root_dir.to_owned();
+        log_dir.push("target");
+        log_dir.push("itest");
+        log_dir.push("logs");
+        fs::create_dir_all(&log_dir).unwrap();
+        log_dir
+    }
+
+    /// Create a path suitable for logging the components output
+    ///
+    /// If your component only generates one output file you should
+    /// put it here.
+    pub fn default_log_file_path(&self) -> PathBuf {
+        let mut dir = self.log_dir();
+        dir.push(format!("{}.log", self.clean_component_name()));
+        dir
+    }
+
+    /// Create a path suitable for logging the components output
+    ///
+    /// If your component only generates out output you should use
+    /// ```default_log_file_path()``` instead.
+    pub fn log_file_path(&self, log_name: &str) -> PathBuf {
+        let mut dir = self.log_dir();
+        dir.push(format!("{}.{}.log", self.clean_component_name(), log_name));
+        dir
+    }
+
+    /// Name of a binary file in the workspace
+    pub fn workspace_binary_path(&self, binary_name: &str) -> PathBuf {
+        let profile = if cfg!(debug_assertions) {
+            "debug"
+        } else {
+            "release"
+        };
+        let mut path = self.workspace_root_dir.to_path_buf();
+        path.push("target");
+        path.push(profile);
+        path.push(binary_name);
+        path
+    }
+
     pub fn get_param(&self, key: &str) -> Result<&Param, ()> {
         self.params.get(key).ok_or(())
     }

@@ -1,4 +1,6 @@
-use std::io::BufRead;
+use std::fs::File;
+use std::io::{self, BufRead, BufWriter, Write};
+use std::path::{Path, PathBuf};
 
 use testcontainers::{Container, ContainerRequest, GenericImage, Image, runners::SyncRunner};
 
@@ -20,16 +22,19 @@ impl ContainerSetUp {
 }
 
 impl SetUp for ContainerSetUp {
-    fn set_up(&mut self, _ctx: &mut Context) -> SetUpResult {
+    fn set_up(&mut self, ctx: &mut Context) -> SetUpResult {
         let image = self.image.take().unwrap();
         let container = image.start()?;
+        let stdout_file = ctx.log_file_path("stdout");
+        let stderr_file = ctx.log_file_path("stderr");
         let stdout = container.stdout(true);
         let stderr = container.stderr(true);
         Ok(Box::new(ContainerComponent {
-            name: self.name.to_owned(),
             container,
             stdout,
+            stdout_file,
             stderr,
+            stderr_file,
         }))
     }
 
@@ -39,10 +44,11 @@ impl SetUp for ContainerSetUp {
 }
 
 pub struct ContainerComponent {
-    name: String,
     container: Container<GenericImage>,
     stdout: Box<dyn BufRead + Send>,
+    stdout_file: PathBuf,
     stderr: Box<dyn BufRead + Send>,
+    stderr_file: PathBuf,
 }
 
 impl TearDown for ContainerComponent {
@@ -50,23 +56,13 @@ impl TearDown for ContainerComponent {
         self.container.stop()?;
 
         // for now just write the logs at the end
-
-        let clean_name = self.name.replace("/", "_");
-
-        let stdout_name = format!("/tmp/{}.stdout.log", &clean_name);
-        dump_to_file(&mut self.stdout, &stdout_name).unwrap();
-
-        let stderr_name = format!("/tmp/{}.stderr.log", &clean_name);
-        dump_to_file(&mut self.stderr, &stderr_name).unwrap();
-
+        dump_to_file(&mut self.stdout, &self.stdout_file).unwrap();
+        dump_to_file(&mut self.stderr, &self.stderr_file).unwrap();
         Ok(())
     }
 }
 
-use std::fs::File;
-use std::io::{self, BufWriter, Write};
-
-fn dump_to_file(reader: &mut Box<dyn BufRead + Send>, file_path: &str) -> io::Result<()> {
+fn dump_to_file(reader: &mut Box<dyn BufRead + Send>, file_path: &Path) -> io::Result<()> {
     let file = File::create(file_path)?;
     let mut writer = BufWriter::new(file);
 

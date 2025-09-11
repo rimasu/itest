@@ -1,9 +1,10 @@
-
 #![feature(exit_status_error)]
 
 use std::{
     fmt,
     io::{self, Write},
+    path::{Path, PathBuf},
+    process::Command,
 };
 
 use std::time::Instant;
@@ -99,6 +100,8 @@ impl<'s> Component<'s> {
         self.log_action_start("set up");
 
         let start = Instant::now();
+        ctx.set_current_component(self.set_up.name());
+
         let outcome = match self.set_up.set_up(ctx) {
             Ok(tear_down) => {
                 self.tear_down = Some(tear_down);
@@ -134,16 +137,21 @@ impl<'s> Component<'s> {
     }
 }
 
-#[derive(Default)]
 struct Components<'s> {
     components: Vec<Component<'s>>,
 }
 
 impl<'s> Components<'s> {
-    fn set_up(&mut self) -> Outcome {
+    pub fn new(components: Vec<Component<'s>>) -> Components<'s> {
+        Self { components }
+    }
+}
+
+impl<'s> Components<'s> {
+    fn set_up(&mut self, ctx: &mut Context) -> Outcome {
         println!("setting up {} components", self.components.len());
         let start = Instant::now();
-        let outcome = self.run_component_set_ups();
+        let outcome = self.run_component_set_ups(ctx);
         let elapsed = start.elapsed();
         println!(
             "\nset up: {}. finished in {:.02}s",
@@ -153,10 +161,9 @@ impl<'s> Components<'s> {
         outcome
     }
 
-    fn run_component_set_ups(&mut self) -> Outcome {
-        let mut ctx = Context::default();
+    fn run_component_set_ups(&mut self, ctx: &mut Context) -> Outcome {
         for component in &mut self.components {
-            if component.set_up(&mut ctx) != Outcome::Ok {
+            if component.set_up(ctx) != Outcome::Ok {
                 return Outcome::Failed;
             } else {
                 ctx.log_updated_params();
@@ -222,13 +229,38 @@ fn make_components<'s>(set_ups: &'s mut [Box<dyn SetUp>]) -> Components<'s> {
         .map(|s| Component::new(s, max_name_len))
         .collect();
 
-    Components { components }
+    Components::new(components)
 }
 
-#[derive(Default)]
 pub struct ITest {
     context: Context,
     set_ups: Vec<Box<dyn SetUp>>,
+}
+
+impl ITest {
+    pub fn new() -> Self {
+        let workspace_root_dir = find_workspace_root_dir();
+        let context = Context::new(&workspace_root_dir);
+        Self {
+            context,
+            set_ups: Vec::new(),
+        }
+    }
+}
+
+fn find_workspace_root_dir() -> PathBuf {
+    // Get workspace root
+    let output = Command::new("cargo")
+        .args(&["locate-project", "--workspace", "--message-format=plain"])
+        .output()
+        .expect("Failed to locate workspace");
+
+    let stdout = output.stdout;
+    let workspace_root = String::from_utf8(stdout).expect("Invalid UTF-8");
+
+    let workspace_root = workspace_root.trim().trim_end_matches("/Cargo.toml");
+
+    PathBuf::from(workspace_root).canonicalize().unwrap()
 }
 
 impl ITest {
@@ -245,7 +277,7 @@ impl ITest {
     pub fn run(mut self) {
         let mut components = make_components(&mut self.set_ups);
 
-        let set_up_status = components.set_up();
+        let set_up_status = components.set_up(&mut self.context);
 
         let conculsion = if set_up_status == Outcome::Ok {
             Some(run_tests())
