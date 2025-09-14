@@ -1,5 +1,9 @@
 use std::{
-    collections::{BTreeMap, BTreeSet}, fmt, fs, io::{self, Write}, path::{Path, PathBuf}, time::Instant
+    collections::{BTreeMap, BTreeSet},
+    fmt, fs,
+    io::{self, Write},
+    path::{Path, PathBuf},
+    time::Instant,
 };
 
 use crate::Outcome;
@@ -38,8 +42,6 @@ impl Context {
         }
     }
 
-
-
     pub(crate) fn set_current_component(&mut self, name: &str) {
         self.current_component_name = name.to_owned();
     }
@@ -58,12 +60,17 @@ impl Context {
         log_dir
     }
 
-    pub (crate) fn log_action_start(&self, action: &str, name: &str) {
-        print!("{} {:width$} ... ", action, name, width = self.max_component_name_len);
+    pub(crate) fn log_action_start(&self, action: &str, name: &str) {
+        print!(
+            "{} {:width$} ... ",
+            action,
+            name,
+            width = self.max_component_name_len
+        );
         io::stdout().flush().unwrap();
     }
 
-    pub (crate) fn log_action_end(&self, status: Outcome, start: Instant) {
+    pub(crate) fn log_action_end(&self, status: Outcome, start: Instant) {
         if status == Outcome::Skipped {
             println!("{}", status);
         } else {
@@ -114,7 +121,17 @@ impl Context {
         self.params.get(key).ok_or(())
     }
 
+    pub fn set_global_param(&mut self, key: &str, value: &str) {
+        self.params.insert(
+            key.to_owned(),
+            Param {
+                raw: value.to_owned(),
+            },
+        );
+    }
+
     pub fn set_param(&mut self, key: &str, value: &str) {
+        let key = format!("{}.{}", self.clean_component_name(), key);
         self.params.insert(
             key.to_owned(),
             Param {

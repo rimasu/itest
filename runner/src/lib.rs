@@ -241,7 +241,7 @@ fn find_workspace_root_dir() -> PathBuf {
 
 impl ITest {
     pub fn set(mut self, key: &str, value: &str) -> Self {
-        self.context.set_param(key, value);
+        self.context.set_global_param(key, value);
         self
     }
 

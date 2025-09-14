@@ -1,4 +1,3 @@
-
 use std::path::Path;
 
 use itest_runner::components::container::set_up_container;
@@ -32,8 +31,6 @@ fn can_call_server_via_envoy_with_http1() {
     let body = response.text().unwrap();
     assert_eq!(r#"{"message":"Hello, World!"}"#, body);
 }
-
-
 
 fn set_up_redis(ctx: &mut Context) -> SetUpResult {
     let image = GenericImage::new("redis", "7.2.4")
@@ -73,24 +70,23 @@ fn set_up_postgres(ctx: &mut Context) -> SetUpResult {
     set_up_container(image, ctx)
 }
 
-fn set_up_schema(ctx: &mut Context) -> SetUpResult {
-    LocalCliSetUp::new("example-cli")
-        .with_args(&["install-schema"])
-        .run(ctx)
-}
-
-fn run_server(ctx: &mut Context) -> SetUpResult {
-    LocalServerSetUp::new("example-server").launch(ctx)
-}
-
 fn main() {
     ITest::new()
         .set("loglevel", "high")
         .with("cfg_dir", set_up_temp_dir)
+        .with("other_dir", set_up_temp_dir)
         .with("redis", set_up_redis)
         .with("envoy", set_up_envoy)
         .with("postgres", set_up_postgres)
-        .with("set-up-schema", set_up_schema)
-        .with("server", run_server)
+        .with("schema", {
+            |ctx| {
+                LocalCliSetUp::new("example-cli")
+                    .with_args(&["install-schema"])
+                    .run(ctx)
+            }
+        })
+        .with("server", {
+            |ctx| LocalServerSetUp::new("example-server").launch(ctx)
+        })
         .run();
 }

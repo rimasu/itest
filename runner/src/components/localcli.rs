@@ -22,7 +22,7 @@ impl LocalCliSetUp {
         })
     }
 
-    pub fn run(mut self, ctx: &mut Context) -> SetUpResult {
+    pub fn run(self, ctx: &mut Context) -> SetUpResult {
         let binary = ctx.workspace_binary_path(&self.name);
         let child = Command::new(binary).args(&self.args).spawn()?;
 

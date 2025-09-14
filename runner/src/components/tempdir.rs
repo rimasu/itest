@@ -3,8 +3,7 @@ use tempfile::TempDir;
 
 pub fn set_up_temp_dir(ctx: &mut Context) -> SetUpResult {
     let temp_dir = TempDir::new()?;
-    let key = format!("{}.path", "a");
-    ctx.set_param(&key, temp_dir.path().to_str().unwrap());
+    ctx.set_param("path", temp_dir.path().to_str().unwrap());
     Ok(Box::new(TempDirComponent {
         temp_dir: Some(temp_dir),
     }))
