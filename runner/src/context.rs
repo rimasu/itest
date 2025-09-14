@@ -1,8 +1,8 @@
 use std::{
-    collections::{BTreeMap, BTreeSet},
-    fmt, fs,
-    path::{Path, PathBuf},
+    collections::{BTreeMap, BTreeSet}, fmt, fs, io::{self, Write}, path::{Path, PathBuf}, time::Instant
 };
+
+use crate::Outcome;
 
 pub struct Param {
     raw: String,
@@ -18,6 +18,7 @@ pub struct Context {
     params: BTreeMap<String, Param>,
     updated_params: BTreeSet<String>,
     workspace_root_dir: PathBuf,
+    pub max_component_name_len: usize,
     current_component_name: String,
 }
 
@@ -32,9 +33,12 @@ impl Context {
             params: BTreeMap::new(),
             updated_params: BTreeSet::new(),
             workspace_root_dir: workspace_root_dir.to_path_buf(),
+            max_component_name_len: 0,
             current_component_name: "".to_owned(),
         }
     }
+
+
 
     pub(crate) fn set_current_component(&mut self, name: &str) {
         self.current_component_name = name.to_owned();
@@ -52,6 +56,24 @@ impl Context {
         log_dir.push("logs");
         fs::create_dir_all(&log_dir).unwrap();
         log_dir
+    }
+
+    pub (crate) fn log_action_start(&self, action: &str, name: &str) {
+        print!("{} {:width$} ... ", action, name, width = self.max_component_name_len);
+        io::stdout().flush().unwrap();
+    }
+
+    pub (crate) fn log_action_end(&self, status: Outcome, start: Instant) {
+        if status == Outcome::Skipped {
+            println!("{}", status);
+        } else {
+            let elapsed = start.elapsed();
+            println!(
+                "{} ({:.02}s)",
+                status,
+                (elapsed.as_millis() as f64) / 1000.0
+            );
+        }
     }
 
     /// Create a path suitable for logging the components output

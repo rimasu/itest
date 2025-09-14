@@ -2,6 +2,20 @@ use proc_macro::TokenStream;
 use quote::quote;
 
 #[proc_macro_attribute]
+pub fn set_up(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    let input_fn: syn::ItemFn = syn::parse(item).unwrap();
+    let fn_name = &input_fn.sig.ident;
+    let fn_name_str = fn_name.to_string();
+
+    let expanded = quote! {
+        #input_fn
+
+    };
+
+    expanded.into()
+}
+
+#[proc_macro_attribute]
 pub fn itest(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let input_fn: syn::ItemFn = syn::parse(item).unwrap();
     let fn_name = &input_fn.sig.ident;

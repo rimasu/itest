@@ -3,14 +3,14 @@
 use std::{
     fmt,
     io::{self, Write},
-    path::{Path, PathBuf},
+    path::PathBuf,
     process::Command,
 };
 
 use std::time::Instant;
 
 pub use inventory::{collect, submit};
-pub use itest_macros::itest;
+pub use itest_macros::{itest, set_up};
 
 pub mod components;
 
@@ -43,44 +43,32 @@ pub struct RegisteredITest {
 }
 inventory::collect!(RegisteredITest);
 
-pub type SetUpResult = Result<Box<dyn TearDown + 'static>, Box<dyn std::error::Error>>;
+pub type SetupFunction =
+    fn(ctx: &mut Context) -> Result<Box<dyn TearDown + 'static>, Box<dyn std::error::Error>>;
 
-pub trait SetUp {
-    fn set_up(&mut self, ctx: &mut Context) -> SetUpResult;
-    fn name(&self) -> &str;
-}
+pub type SetUpResult = Result<Box<dyn TearDown + 'static>, Box<dyn std::error::Error>>;
 
 pub trait TearDown {
     fn tear_down(&mut self) -> Result<(), Box<dyn std::error::Error>>;
 }
 
-struct Component<'s> {
-    max_name_len: usize,
-    set_up: &'s mut Box<dyn SetUp>,
+struct Component {
+    name: String,
+    set_up_fn: SetupFunction,
     set_up_err: Option<Box<dyn std::error::Error>>,
     tear_down: Option<Box<dyn TearDown + 'static>>,
     tear_down_err: Option<Box<dyn std::error::Error>>,
 }
 
-impl<'s> Component<'s> {
-    fn new(set_up: &'s mut Box<dyn SetUp>, max_name_len: usize) -> Component<'s> {
+impl Component {
+    fn new(name: &str, set_up_fn: SetupFunction) -> Component {
         Component {
-            max_name_len,
-            set_up,
+            name: name.to_owned(),
+            set_up_fn,
             set_up_err: None,
             tear_down: None,
             tear_down_err: None,
         }
-    }
-
-    fn log_action_start(&self, action: &str) {
-        print!(
-            "{} {:width$} ... ",
-            action,
-            &self.set_up.name(),
-            width = self.max_name_len
-        );
-        io::stdout().flush().unwrap();
     }
 
     fn log_action_end(&self, status: Outcome, start: Instant) {
@@ -97,12 +85,9 @@ impl<'s> Component<'s> {
     }
 
     fn set_up(&mut self, ctx: &mut Context) -> Outcome {
-        self.log_action_start("set up");
+        ctx.set_current_component(&self.name);
 
-        let start = Instant::now();
-        ctx.set_current_component(self.set_up.name());
-
-        let outcome = match self.set_up.set_up(ctx) {
+        let outcome = match (self.set_up_fn)(ctx) {
             Ok(tear_down) => {
                 self.tear_down = Some(tear_down);
                 Outcome::Ok
@@ -113,14 +98,10 @@ impl<'s> Component<'s> {
             }
         };
 
-        self.log_action_end(outcome, start);
-
         outcome
     }
 
     fn tear_down(&mut self) -> Outcome {
-        self.log_action_start("tear down");
-        let start = Instant::now();
         let outcome = if let Some(tear_down) = &mut self.tear_down {
             match tear_down.tear_down() {
                 Ok(()) => Outcome::Ok,
@@ -132,22 +113,28 @@ impl<'s> Component<'s> {
         } else {
             Outcome::Skipped
         };
-        self.log_action_end(outcome, start);
         outcome
     }
 }
 
-struct Components<'s> {
-    components: Vec<Component<'s>>,
+#[derive(Default)]
+struct Components {
+    components: Vec<Component>,
 }
 
-impl<'s> Components<'s> {
-    pub fn new(components: Vec<Component<'s>>) -> Components<'s> {
-        Self { components }
+impl Components {
+    fn add_component(&mut self, name: &str, set_up_fn: SetupFunction) {
+        self.components.push(Component::new(name, set_up_fn));
     }
-}
 
-impl<'s> Components<'s> {
+    pub(crate) fn max_component_name_len(&self) -> usize {
+        self.components
+            .iter()
+            .map(|i| i.name.chars().count())
+            .max()
+            .unwrap_or(0)
+    }
+
     fn set_up(&mut self, ctx: &mut Context) -> Outcome {
         println!("setting up {} components", self.components.len());
         let start = Instant::now();
@@ -163,7 +150,11 @@ impl<'s> Components<'s> {
 
     fn run_component_set_ups(&mut self, ctx: &mut Context) -> Outcome {
         for component in &mut self.components {
-            if component.set_up(ctx) != Outcome::Ok {
+            let start = Instant::now();
+            ctx.log_action_start("set up", &component.name);
+            let outcome = component.set_up(ctx);
+            ctx.log_action_end(outcome, start);
+            if outcome != Outcome::Ok {
                 return Outcome::Failed;
             } else {
                 ctx.log_updated_params();
@@ -172,10 +163,10 @@ impl<'s> Components<'s> {
         Outcome::Ok
     }
 
-    fn tear_down(&mut self) -> Outcome {
+    fn tear_down(&mut self, ctx: &mut Context) -> Outcome {
         println!("\ntearing down {} components", self.components.len());
         let start = Instant::now();
-        let outcome = self.run_component_tear_downs();
+        let outcome = self.run_component_tear_downs(ctx);
         let elapsed = start.elapsed();
         println!(
             "\ntear down: {}. finished in {:.02}s",
@@ -185,11 +176,15 @@ impl<'s> Components<'s> {
         outcome
     }
 
-    fn run_component_tear_downs(&mut self) -> Outcome {
+    fn run_component_tear_downs(&mut self, ctx: &mut Context) -> Outcome {
         // we attempt to call all tear down functions - even if some fail.
         let mut all_clean = true;
         for component in self.components.iter_mut().rev() {
-            all_clean &= component.tear_down() != Outcome::Failed
+            let start = Instant::now();
+            ctx.log_action_start("tear down", &component.name);
+            let outcome = component.tear_down();
+            ctx.log_action_end(outcome, start);
+            all_clean &= outcome != Outcome::Failed
         }
         if all_clean {
             Outcome::Ok
@@ -197,14 +192,6 @@ impl<'s> Components<'s> {
             Outcome::Failed
         }
     }
-}
-
-fn max_set_up_name_len(set_ups: &[Box<dyn SetUp>]) -> usize {
-    let mut max_len = 0;
-    for set_up in set_ups {
-        max_len = max_len.max(set_up.name().chars().count());
-    }
-    max_len
 }
 
 fn run_tests() -> Conclusion {
@@ -221,20 +208,9 @@ fn run_tests() -> Conclusion {
     libtest_mimic::run(&args, tests)
 }
 
-fn make_components<'s>(set_ups: &'s mut [Box<dyn SetUp>]) -> Components<'s> {
-    let max_name_len = max_set_up_name_len(set_ups);
-
-    let components = set_ups
-        .into_iter()
-        .map(|s| Component::new(s, max_name_len))
-        .collect();
-
-    Components::new(components)
-}
-
 pub struct ITest {
     context: Context,
-    set_ups: Vec<Box<dyn SetUp>>,
+    components: Components,
 }
 
 impl ITest {
@@ -243,7 +219,7 @@ impl ITest {
         let context = Context::new(&workspace_root_dir);
         Self {
             context,
-            set_ups: Vec::new(),
+            components: Components::default(),
         }
     }
 }
@@ -269,15 +245,16 @@ impl ITest {
         self
     }
 
-    pub fn with(mut self, set_up: Box<dyn SetUp>) -> Self {
-        self.set_ups.push(set_up);
+    pub fn with(mut self, name: &str, set_up_fn: SetupFunction) -> Self
+    {
+        self.components.add_component(name, set_up_fn);
         self
     }
 
     pub fn run(mut self) {
-        let mut components = make_components(&mut self.set_ups);
+        self.context.max_component_name_len = self.components.max_component_name_len();
 
-        let set_up_status = components.set_up(&mut self.context);
+        let set_up_status = self.components.set_up(&mut self.context);
 
         let conculsion = if set_up_status == Outcome::Ok {
             Some(run_tests())
@@ -285,17 +262,17 @@ impl ITest {
             None
         };
 
-        let tear_down_status = components.tear_down();
+        let tear_down_status = self.components.tear_down(&mut self.context);
 
-        for component in &components.components {
+        for component in &self.components.components {
             if let Some(err) = &component.set_up_err {
-                println!("{} set up failed:\n{}", component.set_up.name(), err);
+                println!("{} set up failed:\n{}", component.name, err);
             }
         }
 
-        for component in &components.components {
+        for component in &self.components.components {
             if let Some(err) = &component.tear_down_err {
-                println!("{} tear down failed:\n{}", component.set_up.name(), err);
+                println!("{} tear down failed:\n{}", component.name, err);
             }
         }
 

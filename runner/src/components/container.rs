@@ -1,46 +1,25 @@
 use std::fs::File;
 use std::io::{self, BufRead, BufWriter, Write};
 use std::path::{Path, PathBuf};
+use std::result::Result;
 
-use testcontainers::{Container, ContainerRequest, GenericImage, Image, runners::SyncRunner};
+use testcontainers::{Container, ContainerRequest, GenericImage, runners::SyncRunner};
 
-use crate::{Context, SetUp, SetUpResult, TearDown};
+use crate::{Context, SetUpResult, TearDown};
 
-pub struct ContainerSetUp {
-    name: String,
-    image: Option<ContainerRequest<GenericImage>>,
-}
-
-impl ContainerSetUp {
-    pub fn new(request: ContainerRequest<GenericImage>) -> Box<ContainerSetUp> {
-        let name = request.image().name().to_owned();
-        Box::new(ContainerSetUp {
-            name,
-            image: Some(request),
-        })
-    }
-}
-
-impl SetUp for ContainerSetUp {
-    fn set_up(&mut self, ctx: &mut Context) -> SetUpResult {
-        let image = self.image.take().unwrap();
-        let container = image.start()?;
-        let stdout_file = ctx.log_file_path("stdout");
-        let stderr_file = ctx.log_file_path("stderr");
-        let stdout = container.stdout(true);
-        let stderr = container.stderr(true);
-        Ok(Box::new(ContainerComponent {
-            container,
-            stdout,
-            stdout_file,
-            stderr,
-            stderr_file,
-        }))
-    }
-
-    fn name(&self) -> &str {
-        &self.name
-    }
+pub fn set_up_container(image: ContainerRequest<GenericImage>, ctx: &mut Context) -> SetUpResult {
+    let container = image.start()?;
+    let stdout_file = ctx.log_file_path("stdout");
+    let stderr_file = ctx.log_file_path("stderr");
+    let stdout = container.stdout(true);
+    let stderr = container.stderr(true);
+    Ok(Box::new(ContainerComponent {
+        container,
+        stdout,
+        stdout_file,
+        stderr,
+        stderr_file,
+    }))
 }
 
 pub struct ContainerComponent {

@@ -1,10 +1,6 @@
-use std::{
-    io,
-    path::PathBuf,
-    process::{Command, Output},
-};
+use std::process::{Command, Output};
 
-use crate::{Context, SetUp, SetUpResult, TearDown};
+use crate::{Context, SetUpResult, TearDown};
 
 pub struct LocalCliSetUp {
     name: String,
@@ -25,10 +21,8 @@ impl LocalCliSetUp {
             args: args.iter().map(|i| i.to_string()).collect(),
         })
     }
-}
 
-impl SetUp for LocalCliSetUp {
-    fn set_up(&mut self, ctx: &mut Context) -> SetUpResult {
+    pub fn run(mut self, ctx: &mut Context) -> SetUpResult {
         let binary = ctx.workspace_binary_path(&self.name);
         let child = Command::new(binary).args(&self.args).spawn()?;
 
@@ -38,10 +32,6 @@ impl SetUp for LocalCliSetUp {
             name: self.name.to_owned(),
             output,
         }))
-    }
-
-    fn name(&self) -> &str {
-        &self.name
     }
 }
 
@@ -55,4 +45,3 @@ impl TearDown for LocalCliComponent {
         Ok(())
     }
 }
-
