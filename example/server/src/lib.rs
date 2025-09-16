@@ -1,19 +1,53 @@
+use std::collections::HashMap;
+
 use axum::{
-    extract::Request, http::StatusCode, middleware::{self, Next}, response::{IntoResponse, Json, Response}, routing::get, Router
+    Router,
+    extract::{Path, Query, Request, State},
+    http::StatusCode,
+    middleware::{self, Next},
+    response::{IntoResponse, Json, Response},
+    routing::get,
 };
+use serde::Deserialize;
 use serde_json::{Value, json};
+use sqlx::{Pool, Postgres};
 use tokio::net::TcpListener;
 
 async fn hello() -> Json<Value> {
     Json(json!({"message": "Hello, World!"}))
 }
 
-async fn log_http_version(request: Request, next: Next) -> Response {
+#[derive(Deserialize, Debug)]
+struct KeyParams {
+    set: Option<String>,
+}
+
+async fn key_value_pair(
+    Path(key): Path<String>,
+    Query(params): Query<KeyParams>,
+    State(state): State<ServerState>,
+) -> Json<Value> {
+    if let Some(set) = &params.set {
+        sqlx::query!("INSERT INTO key_value_pair (key, value) VALUES($1, $2) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value", &key, set)
+            .execute(&state.pool)
+            .await.unwrap();
+
+        println!("{:?}={:?}", key, params.set);
+        Json(json!({"message": "Hello, World!"}))
+    } else {
+        let record = sqlx::query!("SELECT value FROM key_value_pair WHERE key=$1", &key)
+            .fetch_one(&state.pool)
+            .await
+            .unwrap();
+
+        Json(json!({"key": key.to_owned(), "value":  record.value.to_owned()}))
+    }
+}
+
+async fn force_http2_only(request: Request, next: Next) -> Response {
     let version = request.version();
     match version {
-        axum::http::Version::HTTP_2 => {
-            next.run(request).await
-        }
+        axum::http::Version::HTTP_2 => next.run(request).await,
         _ => {
             println!("HTTP/1.x request blocked");
             (
@@ -28,10 +62,26 @@ async fn log_http_version(request: Request, next: Next) -> Response {
     }
 }
 
+async fn connect_to_database() -> Pool<Postgres> {
+    let database_url = "postgresql://test_user:test_password1@localhost:5432/test_db";
+    let pool = Pool::<Postgres>::connect(database_url).await.unwrap();
+    pool
+}
+
+#[derive(Clone)]
+pub struct ServerState {
+    pool: Pool<Postgres>,
+}
+
 pub async fn server_main() {
+    let pool = connect_to_database().await;
+    let state = ServerState { pool };
+
     let app = Router::new()
         .route("/", get(hello))
-        .layer(middleware::from_fn(log_http_version));
+        .route("/{key}", get(key_value_pair))
+        .layer(middleware::from_fn(force_http2_only))
+        .with_state(state);
 
     let listener = TcpListener::bind("127.0.0.1:3000").await.unwrap();
     axum::serve(listener, app).await.unwrap();

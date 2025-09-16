@@ -1,11 +1,29 @@
+
 services:
   envoy:
     image: envoyproxy/envoy:v1.33-latest
-    network_mode: host
+    container_name: local-envoy
     ports:
       - "8080:8080"  # HTTP/1.1 proxy port
       - "9901:9901"  # Admin interface
     volumes:
       - ./etc/envoy/envoy.yaml:/etc/envoy/envoy.yaml:ro
- 
-    
+
+  db:
+    image: postgres
+    container_name: local-db
+    restart: always
+    shm_size: 128mb
+    ports:
+     - "5432:5432"
+    environment:
+      POSTGRES_PASSWORD: test_password1
+      POSTGRES_USER: test_user
+      POSTGRES_DB: test_db
+
+  adminer:
+     image: adminer
+     container_name: local-adminer
+     restart: always
+     ports:
+       - "19999:8080"

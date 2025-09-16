@@ -10,7 +10,7 @@ use std::{
 use std::time::Instant;
 
 pub use inventory::{collect, submit};
-pub use itest_macros::{itest, set_up};
+pub use itest_macros::itest;
 
 pub mod components;
 
@@ -245,8 +245,7 @@ impl ITest {
         self
     }
 
-    pub fn with(mut self, name: &str, set_up_fn: SetupFunction) -> Self
-    {
+    pub fn with(mut self, name: &str, set_up_fn: SetupFunction) -> Self {
         self.components.add_component(name, set_up_fn);
         self
     }
