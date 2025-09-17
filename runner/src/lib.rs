@@ -2,7 +2,6 @@
 
 use std::{
     fmt,
-    io::{self, Write},
     path::PathBuf,
     process::Command,
 };
@@ -68,19 +67,6 @@ impl Component {
             set_up_err: None,
             tear_down: None,
             tear_down_err: None,
-        }
-    }
-
-    fn log_action_end(&self, status: Outcome, start: Instant) {
-        if status == Outcome::Skipped {
-            println!("{}", status);
-        } else {
-            let elapsed = start.elapsed();
-            println!(
-                "{} ({:.02}s)",
-                status,
-                (elapsed.as_millis() as f64) / 1000.0
-            );
         }
     }
 

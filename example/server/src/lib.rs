@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use axum::{
     Router,
     extract::{Path, Query, Request, State},
@@ -63,6 +61,7 @@ async fn force_http2_only(request: Request, next: Next) -> Response {
 }
 
 async fn connect_to_database() -> Pool<Postgres> {
+    println!("Connecting to database");
     let database_url = "postgresql://test_user:test_password1@localhost:5432/test_db";
     let pool = Pool::<Postgres>::connect(database_url).await.unwrap();
     pool
