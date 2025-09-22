@@ -12,6 +12,12 @@ pub struct Param {
     raw: String,
 }
 
+impl Param {
+    pub fn as_str(&self) -> &str {
+        &self.raw
+    }
+}
+
 impl fmt::Debug for Param {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.write_str(&self.raw)

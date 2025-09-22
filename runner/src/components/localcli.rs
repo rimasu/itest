@@ -5,33 +5,54 @@ use std::{
     process::{Command, Output, Stdio},
 };
 
-use crate::{Context, SetUpResult, TearDown};
+use async_trait::async_trait;
+
+use crate::{AsyncSetUp, Context, SetUpResult, TearDown};
 
 pub struct LocalCliSetUp {
     name: String,
     args: Vec<String>,
+    envs: Vec<(String, String)>,
 }
 
 impl LocalCliSetUp {
-    pub fn new(name: &str) -> Box<LocalCliSetUp> {
-        Box::new(LocalCliSetUp {
+    pub fn new(name: &str) -> LocalCliSetUp {
+        LocalCliSetUp {
             name: name.to_owned(),
             args: Vec::new(),
-        })
+            envs: Vec::new(),
+        }
     }
 
-    pub fn with_args(self, args: &[&str]) -> Box<LocalCliSetUp> {
-        Box::new(LocalCliSetUp {
+    pub fn with_args(self, args: &[&str]) -> LocalCliSetUp {
+        LocalCliSetUp {
             name: self.name,
             args: args.iter().map(|i| i.to_string()).collect(),
-        })
+            envs: self.envs,
+        }
     }
 
-    pub fn run(self, ctx: &mut Context) -> SetUpResult {
+    pub fn with_envs(self, envs: &[(&str, &str)]) -> LocalCliSetUp {
+        LocalCliSetUp {
+            name: self.name,
+            args: self.args,
+            envs: envs
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect(),
+        }
+    }
+}
+
+
+#[async_trait]
+impl AsyncSetUp for LocalCliSetUp {
+    async fn set_up(&mut self, ctx: &mut Context) -> SetUpResult {
         let binary = ctx.workspace_binary_path(&self.name);
         let mut child = Command::new(binary)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
+            .envs(self.envs.clone())
             .args(&self.args)
             .spawn()?;
 
@@ -49,10 +70,9 @@ impl LocalCliSetUp {
         let mut stderr = BufReader::new(stderr);
         dump_to_file(&mut stderr, &stderr_file).unwrap();
 
-
         Ok(Box::new(LocalCliComponent {
             name: self.name.to_owned(),
-            output: output?
+            output: output?,
         }))
     }
 }
@@ -62,8 +82,9 @@ pub struct LocalCliComponent {
     output: Output,
 }
 
+#[async_trait]
 impl TearDown for LocalCliComponent {
-    fn tear_down(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+    async fn tear_down(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         Ok(())
     }
 }

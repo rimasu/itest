@@ -1,13 +1,11 @@
 #![feature(exit_status_error)]
 
-use std::{
-    fmt,
-    path::PathBuf,
-    process::Command,
-};
+use std::pin::Pin;
+use std::{fmt, path::PathBuf, process::Command};
 
 use std::time::Instant;
 
+use async_trait::async_trait;
 pub use inventory::{collect, submit};
 pub use itest_macros::itest;
 
@@ -18,6 +16,7 @@ mod context;
 pub use context::{Context, Param};
 
 use libtest_mimic::{Arguments, Conclusion, Trial};
+use testcontainers::bollard::models::Runtime;
 
 #[derive(Eq, PartialEq, Clone, Copy)]
 pub enum Outcome {
@@ -42,13 +41,19 @@ pub struct RegisteredITest {
 }
 inventory::collect!(RegisteredITest);
 
+#[async_trait]
+pub trait AsyncSetUp {
+    async fn set_up(&mut self, ctx: &mut Context) -> SetUpResult;
+}
+
 pub type SetupFunction =
-    fn(ctx: &mut Context) -> Result<Box<dyn TearDown + 'static>, Box<dyn std::error::Error>>;
+    fn(ctx: &mut Context) -> Result<Box<dyn AsyncSetUp + 'static>, Box<dyn std::error::Error>>;
 
 pub type SetUpResult = Result<Box<dyn TearDown + 'static>, Box<dyn std::error::Error>>;
 
+#[async_trait]
 pub trait TearDown {
-    fn tear_down(&mut self) -> Result<(), Box<dyn std::error::Error>>;
+    async fn tear_down(&mut self) -> Result<(), Box<dyn std::error::Error>>;
 }
 
 struct Component {
@@ -70,14 +75,20 @@ impl Component {
         }
     }
 
-    fn set_up(&mut self, ctx: &mut Context) -> Outcome {
+    async fn set_up(&mut self, ctx: &mut Context) -> Outcome {
         ctx.set_current_component(&self.name);
 
         let outcome = match (self.set_up_fn)(ctx) {
-            Ok(tear_down) => {
-                self.tear_down = Some(tear_down);
-                Outcome::Ok
-            }
+            Ok(mut set_up) => match set_up.set_up(ctx).await {
+                Ok(tear_down) => {
+                    self.tear_down = Some(tear_down);
+                    Outcome::Ok
+                }
+                Err(err) => {
+                    self.set_up_err = Some(err);
+                    Outcome::Failed
+                }
+            },
             Err(err) => {
                 self.set_up_err = Some(err);
                 Outcome::Failed
@@ -87,9 +98,9 @@ impl Component {
         outcome
     }
 
-    fn tear_down(&mut self) -> Outcome {
+    async fn tear_down(&mut self) -> Outcome {
         let outcome = if let Some(tear_down) = &mut self.tear_down {
-            match tear_down.tear_down() {
+            match tear_down.tear_down().await {
                 Ok(()) => Outcome::Ok,
                 Err(err) => {
                     self.tear_down_err = Some(err);
@@ -121,10 +132,10 @@ impl Components {
             .unwrap_or(0)
     }
 
-    fn set_up(&mut self, ctx: &mut Context) -> Outcome {
+    async fn set_up(&mut self, ctx: &mut Context) -> Outcome {
         println!("setting up {} components", self.components.len());
         let start = Instant::now();
-        let outcome = self.run_component_set_ups(ctx);
+        let outcome = self.run_component_set_ups(ctx).await;
         let elapsed = start.elapsed();
         println!(
             "\nset up: {}. finished in {:.02}s",
@@ -134,11 +145,11 @@ impl Components {
         outcome
     }
 
-    fn run_component_set_ups(&mut self, ctx: &mut Context) -> Outcome {
+    async fn run_component_set_ups(&mut self, ctx: &mut Context) -> Outcome {
         for component in &mut self.components {
             let start = Instant::now();
             ctx.log_action_start("set up", &component.name);
-            let outcome = component.set_up(ctx);
+            let outcome = component.set_up(ctx).await;
             ctx.log_action_end(outcome, start);
             if outcome != Outcome::Ok {
                 return Outcome::Failed;
@@ -149,10 +160,10 @@ impl Components {
         Outcome::Ok
     }
 
-    fn tear_down(&mut self, ctx: &mut Context) -> Outcome {
+    async fn tear_down(&mut self, ctx: &mut Context) -> Outcome {
         println!("\ntearing down {} components", self.components.len());
         let start = Instant::now();
-        let outcome = self.run_component_tear_downs(ctx);
+        let outcome = self.run_component_tear_downs(ctx).await;
         let elapsed = start.elapsed();
         println!(
             "\ntear down: {}. finished in {:.02}s",
@@ -162,13 +173,13 @@ impl Components {
         outcome
     }
 
-    fn run_component_tear_downs(&mut self, ctx: &mut Context) -> Outcome {
+    async fn run_component_tear_downs(&mut self, ctx: &mut Context) -> Outcome {
         // we attempt to call all tear down functions - even if some fail.
         let mut all_clean = true;
         for component in self.components.iter_mut().rev() {
             let start = Instant::now();
             ctx.log_action_start("tear down", &component.name);
-            let outcome = component.tear_down();
+            let outcome = component.tear_down().await;
             ctx.log_action_end(outcome, start);
             all_clean &= outcome != Outcome::Failed
         }
@@ -236,10 +247,15 @@ impl ITest {
         self
     }
 
-    pub fn run(mut self) {
+    pub fn run(self) {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(self.run_async())
+    }
+
+    async fn run_async(mut self) {
         self.context.max_component_name_len = self.components.max_component_name_len();
 
-        let set_up_status = self.components.set_up(&mut self.context);
+        let set_up_status = self.components.set_up(&mut self.context).await;
 
         let conculsion = if set_up_status == Outcome::Ok {
             Some(run_tests())
@@ -247,7 +263,7 @@ impl ITest {
             None
         };
 
-        let tear_down_status = self.components.tear_down(&mut self.context);
+        let tear_down_status = self.components.tear_down(&mut self.context).await;
 
         for component in &self.components.components {
             if let Some(err) = &component.set_up_err {

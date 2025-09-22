@@ -10,6 +10,8 @@ libtest-mimic = "0.8.1"
 
 testcontainers = { version = "0.25.0", features = ["blocking"] }
 tempfile = "3.21.0"
+tokio = "1.47.1"
+async-trait = "0.1.89"
 
 [features]
 # default = ["testcontainers"]

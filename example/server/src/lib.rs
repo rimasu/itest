@@ -1,3 +1,5 @@
+use std::env;
+
 use axum::{
     Router,
     extract::{Path, Query, Request, State},
@@ -60,10 +62,9 @@ async fn force_http2_only(request: Request, next: Next) -> Response {
     }
 }
 
-async fn connect_to_database() -> Pool<Postgres> {
+async fn connect_to_database(db_url: &str) -> Pool<Postgres> {
     println!("Connecting to database");
-    let database_url = "postgresql://test_user:test_password1@localhost:5432/test_db";
-    let pool = Pool::<Postgres>::connect(database_url).await.unwrap();
+    let pool = Pool::<Postgres>::connect(db_url).await.unwrap();
     pool
 }
 
@@ -73,7 +74,9 @@ pub struct ServerState {
 }
 
 pub async fn server_main() {
-    let pool = connect_to_database().await;
+    let db_url = env::var("EXAMPLE_DATABASE_URL").unwrap();
+
+    let pool = connect_to_database(&db_url).await;
     let state = ServerState { pool };
 
     let app = Router::new()

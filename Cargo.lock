@@ -1423,11 +1423,13 @@ dependencies = [
 name = "itest_runner"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "inventory",
  "itest_macros",
  "libtest-mimic",
  "tempfile",
  "testcontainers",
+ "tokio",
 ]
 
 [[package]]

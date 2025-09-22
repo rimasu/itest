@@ -5,24 +5,54 @@ use std::{
     process::{Child, Command, Stdio},
 };
 
-use crate::{Context, SetUpResult, TearDown};
+use async_trait::async_trait;
+
+use crate::{AsyncSetUp, Context, SetUpResult, TearDown};
 
 pub struct LocalServerSetUp {
     name: String,
+    args: Vec<String>,
+    envs: Vec<(String, String)>,
 }
 
 impl LocalServerSetUp {
-    pub fn new(name: &str) -> Box<LocalServerSetUp> {
-        Box::new(LocalServerSetUp {
+    pub fn new(name: &str) -> LocalServerSetUp {
+        LocalServerSetUp {
             name: name.to_owned(),
-        })
+            args: Vec::new(),
+            envs: Vec::new(),
+        }
     }
 
-    pub fn launch(&mut self, ctx: &mut Context) -> SetUpResult {
+    pub fn with_args(self, args: &[&str]) -> LocalServerSetUp {
+        LocalServerSetUp {
+            name: self.name,
+            args: args.iter().map(|i| i.to_string()).collect(),
+            envs: self.envs,
+        }
+    }
+
+    pub fn with_envs(self, envs: &[(&str, &str)]) -> LocalServerSetUp {
+        LocalServerSetUp {
+            name: self.name,
+            args: self.args,
+            envs: envs
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect(),
+        }
+    }
+}
+
+#[async_trait]
+impl AsyncSetUp for LocalServerSetUp {
+    async fn set_up(&mut self, ctx: &mut Context) -> SetUpResult {
         let binary = ctx.workspace_binary_path(&self.name);
         let child = Command::new(binary)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
+            .envs(self.envs.clone())
+            .args(&self.args)
             .spawn()?;
 
         let stdout_file = ctx.log_file_path("stdout");
@@ -44,8 +74,9 @@ pub struct LocalRunnerComponent {
     stderr_file: PathBuf,
 }
 
+#[async_trait]
 impl TearDown for LocalRunnerComponent {
-    fn tear_down(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+    async fn tear_down(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         if let Some(stdout) = self.child.stdout.take() {
             let mut stdout = BufReader::new(stdout);
             dump_to_file(&mut stdout, &self.stdout_file).unwrap();

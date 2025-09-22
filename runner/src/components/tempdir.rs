@@ -1,4 +1,5 @@
 use crate::{Context, SetUpResult, TearDown};
+use async_trait::async_trait;
 use tempfile::TempDir;
 
 pub fn set_up_temp_dir(ctx: &mut Context) -> SetUpResult {
@@ -13,8 +14,9 @@ struct TempDirComponent {
     temp_dir: Option<TempDir>,
 }
 
+#[async_trait]
 impl TearDown for TempDirComponent {
-    fn tear_down(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+    async fn tear_down(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         self.temp_dir.take().unwrap().close()?;
         Ok(())
     }

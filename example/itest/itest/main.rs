@@ -5,7 +5,7 @@ use itest_runner::components::localcli::LocalCliSetUp;
 use itest_runner::components::localserver::LocalServerSetUp;
 use itest_runner::components::tempdir::set_up_temp_dir;
 
-use itest_runner::{Context, ITest, SetUpResult, itest};
+use itest_runner::{AsyncSetUp, Context, ITest, SetUpResult, itest};
 use reqwest::StatusCode;
 use testcontainers::core::Mount;
 use testcontainers::{
@@ -32,23 +32,24 @@ fn can_call_server_via_envoy_with_http1() {
     assert_eq!(r#"{"message":"Hello, World!"}"#, body);
 }
 
-fn set_up_redis(ctx: &mut Context) -> SetUpResult {
+fn set_up_redis(ctx: &mut Context) -> Result<Box<dyn AsyncSetUp>, Box<dyn std::error::Error>> {
     let image = GenericImage::new("redis", "7.2.4")
         .with_exposed_port(6379.tcp())
         .with_wait_for(WaitFor::message_on_stdout("Ready to accept connections"))
-        .with_network("host")
+        .with_container_name("itest-redis")
         .with_env_var("DEBUG", "1");
 
-    set_up_container(image, ctx)
+    set_up_container(image)
 }
 
-fn set_up_envoy(ctx: &mut Context) -> SetUpResult {
+fn set_up_envoy(ctx: &mut Context) -> Result<Box<dyn AsyncSetUp>, Box<dyn std::error::Error>> {
     let cfg = Path::new("../server/etc/envoy/envoy.yaml")
         .canonicalize()
         .unwrap();
     let cfg = cfg.to_str().unwrap();
 
     let image = GenericImage::new("envoyproxy/envoy", "v1.33-latest")
+        .with_container_name("itest-envoy")
         .with_mount(
             Mount::bind_mount(cfg, "/etc/envoy/envoy.yaml")
                 .with_access_mode(testcontainers::core::AccessMode::ReadOnly),
@@ -56,37 +57,53 @@ fn set_up_envoy(ctx: &mut Context) -> SetUpResult {
         .with_network("host")
         .into();
 
-    set_up_container(image, ctx)
+    set_up_container(image)
 }
 
-fn set_up_postgres(ctx: &mut Context) -> SetUpResult {
+fn set_up_postgres(ctx: &mut Context) -> Result<Box<dyn AsyncSetUp>, Box<dyn std::error::Error>> {
     let image = GenericImage::new("postgres", "18rc1")
+        .with_container_name("itest-postgres")
         .with_env_var("POSTGRES_USER", "test_user")
         .with_env_var("POSTGRES_PASSWORD", "test_password1")
         .with_env_var("POSTGRES_DB", "test_db")
-        .with_network("host")
+        .with_mapped_port(15432, 5432.tcp())
         .into();
 
-    set_up_container(image, ctx)
+    ctx.set_param(
+        "url",
+        "postgresql://test_user:test_password1@localhost:15432/test_db",
+    );
+
+    set_up_container(image)
 }
 
 fn main() {
     ITest::new()
         .set("loglevel", "high")
-        .with("cfg_dir", set_up_temp_dir)
-        .with("other_dir", set_up_temp_dir)
+        // .with("cfg_dir", set_up_temp_dir)
+        // .with("other_dir", set_up_temp_dir)
         .with("redis", set_up_redis)
         .with("envoy", set_up_envoy)
         .with("postgres", set_up_postgres)
         .with("schema", {
             |ctx| {
-                LocalCliSetUp::new("example-cli")
-                    .with_args(&["install-schema"])
-                    .run(ctx)
+                let db_url = ctx.get_param("postgres.url").unwrap();
+                Ok(Box::new(
+                    LocalCliSetUp::new("example-cli")
+                        .with_args(&["install-schema"])
+                        .with_envs(&[("EXAMPLE_DATABASE_URL", db_url.as_str())]),
+                ))
             }
         })
         .with("server", {
-            |ctx| LocalServerSetUp::new("example-server").launch(ctx)
+            |ctx| {
+                let db_url = ctx.get_param("postgres.url").unwrap();
+                Ok(Box::new(
+                    LocalServerSetUp::new("example-server")
+                        .with_envs(&[("EXAMPLE_DATABASE_URL", db_url.as_str())]),
+                ))
+            }
         })
         .run();
 }
+doc

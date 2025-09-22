@@ -1,42 +1,50 @@
 use std::fs::File;
 use std::io::{self, BufRead, BufWriter, Write};
 use std::path::{Path, PathBuf};
+use std::pin::Pin;
 use std::result::Result;
 
-use testcontainers::{Container, ContainerRequest, GenericImage, runners::SyncRunner};
+use async_trait::async_trait;
+use testcontainers::ContainerAsync;
+use testcontainers::{ContainerRequest, GenericImage, runners::AsyncRunner};
 
-use crate::{Context, SetUpResult, TearDown};
+use crate::{AsyncSetUp, Context, SetUpResult, TearDown};
 
-pub fn set_up_container(image: ContainerRequest<GenericImage>, ctx: &mut Context) -> SetUpResult {
-    let container = image.start()?;
-    let stdout_file = ctx.log_file_path("stdout");
-    let stderr_file = ctx.log_file_path("stderr");
-    let stdout = container.stdout(true);
-    let stderr = container.stderr(true);
-    Ok(Box::new(ContainerComponent {
-        container,
-        stdout,
-        stdout_file,
-        stderr,
-        stderr_file,
-    }))
+pub fn set_up_container(
+    req: ContainerRequest<GenericImage>,
+) -> Result<Box<dyn AsyncSetUp>, Box<dyn std::error::Error>> {
+    Ok(Box::new(ContainerSetUp { req: Some(req) }))
+}
+
+struct ContainerSetUp {
+    req: Option<ContainerRequest<GenericImage>>,
+}
+
+#[async_trait]
+impl AsyncSetUp for ContainerSetUp {
+    async fn set_up(&mut self, ctx: &mut Context) -> SetUpResult {
+        let container = self.req.take().unwrap().start().await?;
+        Ok(Box::new(ContainerComponent {
+            container: Some(container),
+        }))
+    }
 }
 
 pub struct ContainerComponent {
-    container: Container<GenericImage>,
-    stdout: Box<dyn BufRead + Send>,
-    stdout_file: PathBuf,
-    stderr: Box<dyn BufRead + Send>,
-    stderr_file: PathBuf,
+    container: Option<ContainerAsync<GenericImage>>,
 }
 
+#[async_trait]
 impl TearDown for ContainerComponent {
-    fn tear_down(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        self.container.stop()?;
+    async fn tear_down(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        if let Some(container) = self.container.take() {
+            container.stop().await?;
+            container.rm().await?;
+        }
 
-        // for now just write the logs at the end
-        dump_to_file(&mut self.stdout, &self.stdout_file).unwrap();
-        dump_to_file(&mut self.stderr, &self.stderr_file).unwrap();
+        // // for now just write the logs at the end
+        // dump_to_file(&mut self.stdout, &self.stdout_file).unwrap();
+        // dump_to_file(&mut self.stderr, &self.stderr_file).unwrap();
         Ok(())
     }
 }
