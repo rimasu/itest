@@ -5,7 +5,7 @@ use itest_runner::components::localcli::LocalCliSetUp;
 use itest_runner::components::localserver::LocalServerSetUp;
 
 use itest_runner::components::tempdir::set_up_temp_dir;
-use itest_runner::{AsyncSetUp, Context, ITest, itest};
+use itest_runner::{AsyncSetUp, Context, ITest, depends_on, itest, set_up};
 use reqwest::StatusCode;
 use testcontainers::core::Mount;
 use testcontainers::{
@@ -32,6 +32,7 @@ fn can_call_server_via_envoy_with_http1() {
     assert_eq!(r#"{"message":"Hello, World!"}"#, body);
 }
 
+#[set_up(Redis)]
 fn set_up_redis(ctx: &mut Context) -> Result<Box<dyn AsyncSetUp>, Box<dyn std::error::Error>> {
     let image = GenericImage::new("redis", "7.2.4")
         .with_exposed_port(6379.tcp())
@@ -42,6 +43,7 @@ fn set_up_redis(ctx: &mut Context) -> Result<Box<dyn AsyncSetUp>, Box<dyn std::e
     set_up_container(image)
 }
 
+#[set_up(Envoy)]
 fn set_up_envoy(ctx: &mut Context) -> Result<Box<dyn AsyncSetUp>, Box<dyn std::error::Error>> {
     let cfg = Path::new("../server/etc/envoy/envoy.yaml")
         .canonicalize()
@@ -60,6 +62,8 @@ fn set_up_envoy(ctx: &mut Context) -> Result<Box<dyn AsyncSetUp>, Box<dyn std::e
     set_up_container(image)
 }
 
+#[depends_on(Postgres)]
+#[set_up(Postgres)]
 fn set_up_postgres(ctx: &mut Context) -> Result<Box<dyn AsyncSetUp>, Box<dyn std::error::Error>> {
     let image = GenericImage::new("postgres", "18rc1")
         .with_container_name("itest-postgres")
@@ -77,32 +81,54 @@ fn set_up_postgres(ctx: &mut Context) -> Result<Box<dyn AsyncSetUp>, Box<dyn std
     set_up_container(image)
 }
 
+#[set_up(Schema)]
+#[depends_on(Postgres)]
+#[depends_on(Postgres)]
+fn install_schema(ctx: &mut Context) -> Result<Box<dyn AsyncSetUp>, Box<dyn std::error::Error>> {
+    let db_url = ctx.get_param("postgres.url").unwrap();
+    Ok(Box::new(
+        LocalCliSetUp::new("example-cli")
+            .with_args(&["install-schema"])
+            .with_envs(&[("EXAMPLE_DATABASE_URL", db_url.as_str())]),
+    ))
+}
+
+#[set_up(Server)]
+#[depends_on(Postgres)]
+fn start_server(ctx: &mut Context) -> Result<Box<dyn AsyncSetUp>, Box<dyn std::error::Error>> {
+    let db_url = ctx.get_param("postgres.url").unwrap();
+    Ok(Box::new(
+        LocalServerSetUp::new("example-server")
+            .with_envs(&[("EXAMPLE_DATABASE_URL", db_url.as_str())]),
+    ))
+}
+
 fn main() {
     ITest::new()
         .set("loglevel", "high")
-        .with("cfg_dir", set_up_temp_dir)
-        .with("other_dir", set_up_temp_dir)
-        .with("redis", set_up_redis)
-        .with("envoy", set_up_envoy)
-        .with("postgres", set_up_postgres)
-        .with("schema", {
-            |ctx| {
-                let db_url = ctx.get_param("postgres.url").unwrap();
-                Ok(Box::new(
-                    LocalCliSetUp::new("example-cli")
-                        .with_args(&["install-schema"])
-                        .with_envs(&[("EXAMPLE_DATABASE_URL", db_url.as_str())]),
-                ))
-            }
-        })
-        .with("server", {
-            |ctx| {
-                let db_url = ctx.get_param("postgres.url").unwrap();
-                Ok(Box::new(
-                    LocalServerSetUp::new("example-server")
-                        .with_envs(&[("EXAMPLE_DATABASE_URL", db_url.as_str())]),
-                ))
-            }
-        })
+        // .with("cfg_dir", set_up_temp_dir)
+        // .with("other_dir", set_up_temp_dir)
+        // .with("redis", set_up_redis)
+        // .with("envoy", set_up_envoy)
+        // .with("postgres", set_up_postgres)
+        // .with("schema", {
+        //     |ctx| {
+        //         let db_url = ctx.get_param("postgres.url").unwrap();
+        //         Ok(Box::new(
+        //             LocalCliSetUp::new("example-cli")
+        //                 .with_args(&["install-schema"])
+        //                 .with_envs(&[("EXAMPLE_DATABASE_URL", db_url.as_str())]),
+        //         ))
+        //     }
+        // })
+        // .with("server", {
+        //     |ctx| {
+        //         let db_url = ctx.get_param("postgres.url").unwrap();
+        //         Ok(Box::new(
+        //             LocalServerSetUp::new("example-server")
+        //                 .with_envs(&[("EXAMPLE_DATABASE_URL", db_url.as_str())]),
+        //         ))
+        //     }
+        // })
         .run();
 }

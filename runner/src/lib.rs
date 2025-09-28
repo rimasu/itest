@@ -1,13 +1,12 @@
 #![feature(exit_status_error)]
 
-use std::pin::Pin;
 use std::{fmt, path::PathBuf, process::Command};
 
 use std::time::Instant;
 
 use async_trait::async_trait;
 pub use inventory::{collect, submit};
-pub use itest_macros::itest;
+pub use itest_macros::{itest, set_up, depends_on};
 
 pub mod components;
 
@@ -16,7 +15,6 @@ mod context;
 pub use context::{Context, Param};
 
 use libtest_mimic::{Arguments, Conclusion, Trial};
-use testcontainers::bollard::models::Runtime;
 
 #[derive(Eq, PartialEq, Clone, Copy)]
 pub enum Outcome {
@@ -33,6 +31,17 @@ impl fmt::Display for Outcome {
             Outcome::Failed => "FAILED",
         })
     }
+}
+
+pub enum SetUpFunc {
+    Full(fn(&mut Context) -> Result<Box<dyn AsyncSetUp + 'static>, Box<dyn std::error::Error>>),
+}
+inventory::collect!(RegisteredSetUp);
+
+pub struct RegisteredSetUp {
+    pub name: &'static str,
+    pub set_up_fn: SetUpFunc,
+    pub deps: &'static [&'static str],
 }
 
 pub struct RegisteredITest {
@@ -191,6 +200,17 @@ impl Components {
     }
 }
 
+
+fn run_set_ups() {
+    for set_up in inventory::iter::<RegisteredSetUp> {
+        println!("Set Up {}", set_up.name);
+        for dep in set_up.deps {
+            println!("\tDep {}", dep);
+        }
+    }
+}
+
+
 fn run_tests() -> Conclusion {
     let args = Arguments::from_args();
     let mut tests = Vec::new();
@@ -253,37 +273,39 @@ impl ITest {
     }
 
     async fn run_async(mut self) {
-        self.context.max_component_name_len = self.components.max_component_name_len();
+        run_set_ups();
 
-        let set_up_status = self.components.set_up(&mut self.context).await;
+        // self.context.max_component_name_len = self.components.max_component_name_len();
 
-        let conculsion = if set_up_status == Outcome::Ok {
-            Some(run_tests())
-        } else {
-            None
-        };
+        // let set_up_status = self.components.set_up(&mut self.context).await;
 
-        let tear_down_status = self.components.tear_down(&mut self.context).await;
+        // let conculsion = if set_up_status == Outcome::Ok {
+        //     Some(run_tests())
+        // } else {
+        //     None
+        // };
 
-        for component in &self.components.components {
-            if let Some(err) = &component.set_up_err {
-                println!("{} set up failed:\n{}", component.name, err);
-            }
-        }
+        // let tear_down_status = self.components.tear_down(&mut self.context).await;
 
-        for component in &self.components.components {
-            if let Some(err) = &component.tear_down_err {
-                println!("{} tear down failed:\n{}", component.name, err);
-            }
-        }
+        // for component in &self.components.components {
+        //     if let Some(err) = &component.set_up_err {
+        //         println!("{} set up failed:\n{}", component.name, err);
+        //     }
+        // }
 
-        println!("\nsummary");
-        println!("  set ups: {}", set_up_status);
-        println!("    tests: TBC");
-        println!("tear down: {}", tear_down_status);
+        // for component in &self.components.components {
+        //     if let Some(err) = &component.tear_down_err {
+        //         println!("{} tear down failed:\n{}", component.name, err);
+        //     }
+        // }
 
-        if let Some(conclusion) = conculsion {
-            conclusion.exit();
-        }
+        // println!("\nsummary");
+        // println!("  set ups: {}", set_up_status);
+        // println!("    tests: TBC");
+        // println!("tear down: {}", tear_down_status);
+
+        // if let Some(conclusion) = conculsion {
+        //     conclusion.exit();
+        // }
     }
 }
