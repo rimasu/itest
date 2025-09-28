@@ -3,9 +3,9 @@ use std::path::Path;
 use itest_runner::components::container::set_up_container;
 use itest_runner::components::localcli::LocalCliSetUp;
 use itest_runner::components::localserver::LocalServerSetUp;
-use itest_runner::components::tempdir::set_up_temp_dir;
 
-use itest_runner::{AsyncSetUp, Context, ITest, SetUpResult, itest};
+use itest_runner::components::tempdir::set_up_temp_dir;
+use itest_runner::{AsyncSetUp, Context, ITest, itest};
 use reqwest::StatusCode;
 use testcontainers::core::Mount;
 use testcontainers::{
@@ -80,8 +80,8 @@ fn set_up_postgres(ctx: &mut Context) -> Result<Box<dyn AsyncSetUp>, Box<dyn std
 fn main() {
     ITest::new()
         .set("loglevel", "high")
-        // .with("cfg_dir", set_up_temp_dir)
-        // .with("other_dir", set_up_temp_dir)
+        .with("cfg_dir", set_up_temp_dir)
+        .with("other_dir", set_up_temp_dir)
         .with("redis", set_up_redis)
         .with("envoy", set_up_envoy)
         .with("postgres", set_up_postgres)
@@ -106,4 +106,3 @@ fn main() {
         })
         .run();
 }
-doc
