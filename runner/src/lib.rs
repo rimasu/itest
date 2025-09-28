@@ -205,7 +205,7 @@ fn run_set_ups() {
     for set_up in inventory::iter::<RegisteredSetUp> {
         println!("Set Up {}", set_up.name);
         for dep in set_up.deps {
-            println!("\tDep {}", dep);
+            println!("\tdepends on {}", dep);
         }
     }
 }
