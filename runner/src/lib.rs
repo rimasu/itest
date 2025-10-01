@@ -1,20 +1,27 @@
 #![feature(exit_status_error)]
 
+use std::collections::HashMap;
+use std::iter::zip;
 use std::{fmt, path::PathBuf, process::Command};
 
 use std::time::Instant;
 
 use async_trait::async_trait;
 pub use inventory::{collect, submit};
-pub use itest_macros::{itest, set_up, depends_on};
+pub use itest_macros::{depends_on, itest, set_up};
 
 pub mod components;
 
 mod context;
+mod deptable;
+mod tasklist;
+mod discover;
 
 pub use context::{Context, Param};
 
 use libtest_mimic::{Arguments, Conclusion, Trial};
+
+use crate::discover::run_set_ups;
 
 #[derive(Eq, PartialEq, Clone, Copy)]
 pub enum Outcome {
@@ -42,6 +49,8 @@ pub struct RegisteredSetUp {
     pub name: &'static str,
     pub set_up_fn: SetUpFunc,
     pub deps: &'static [&'static str],
+    pub file: &'static str,
+    pub line: usize,
 }
 
 pub struct RegisteredITest {
@@ -200,15 +209,12 @@ impl Components {
     }
 }
 
-
-fn run_set_ups() {
-    for set_up in inventory::iter::<RegisteredSetUp> {
-        println!("Set Up {}", set_up.name);
-        for dep in set_up.deps {
-            println!("\tdepends on {}", dep);
-        }
-    }
+struct Thing {
+    name: String,
+    set_up_fn: &'static SetUpFunc,
+    wait_for: Vec<usize>,
 }
+
 
 
 fn run_tests() -> Conclusion {
@@ -273,7 +279,7 @@ impl ITest {
     }
 
     async fn run_async(mut self) {
-        run_set_ups();
+        run_set_ups().unwrap();
 
         // self.context.max_component_name_len = self.components.max_component_name_len();
 

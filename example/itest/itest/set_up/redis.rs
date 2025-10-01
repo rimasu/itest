@@ -1,4 +1,4 @@
-use itest_runner::{AsyncSetUp, Context, components::container::set_up_container, set_up};
+use itest_runner::{AsyncSetUp, Context, components::container::set_up_container, set_up, depends_on};
 use testcontainers::{GenericImage, ImageExt, core::IntoContainerPort, core::WaitFor};
 
 #[set_up(Redis)]

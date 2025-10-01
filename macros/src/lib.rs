@@ -1,6 +1,6 @@
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::Ident;
+use syn::{spanned::Spanned, Ident};
 
 #[proc_macro_attribute]
 pub fn itest(_attr: TokenStream, item: TokenStream) -> TokenStream {
@@ -30,6 +30,10 @@ pub fn set_up(args: TokenStream, item: TokenStream) -> TokenStream {
             return e.to_compile_error().into();
         }
     };
+
+    let span = input_fn.span().unwrap();
+    let file = span.file();
+    let line = span.line();
 
     let name: syn::Ident = match syn::parse(args) {
         Ok(v) => v,
@@ -64,6 +68,8 @@ pub fn set_up(args: TokenStream, item: TokenStream) -> TokenStream {
                 name: #setup_service,
                 set_up_fn: ::itest_runner::SetUpFunc::Full(#fn_name),
                 deps:  &[#(#dep_strs),*],
+                file: #file,
+                line: #line,
             }
         }
     };
