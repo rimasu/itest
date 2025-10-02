@@ -160,6 +160,11 @@ impl<D: Display> DepTable<D> {
     pub fn name(&self, id: usize) -> &str {
         &self.decls[id].name
     }
+
+    pub fn decl(&self, id: usize) -> &D {
+        &self.decls[id].decl
+    }
+
     pub fn make_task_list(&self) -> TaskList {
         let mut deps = Vec::with_capacity(self.usages.len());
         for _ in &self.usages {

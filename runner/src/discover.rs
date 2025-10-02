@@ -1,7 +1,7 @@
 use std::fmt;
 
 use crate::{
-    RegisteredSetUp, SetUpFunc,
+    Context, RegisteredSetUp, SetUpFunc,
     deptable::{Builder, DepTable, Error},
     tasklist::Status,
 };
@@ -53,7 +53,6 @@ fn dry_run_tasks(dep_table: &DepTable<SetUpDecl>) -> Result<Vec<usize>, ()> {
 
         // mark them all as complete
         for idx in ready {
-            println!(" {}", &dep_table.name(idx));
             task.set_status(idx, Status::Running);
             task.set_status(idx, Status::Finished);
         }
@@ -62,7 +61,7 @@ fn dry_run_tasks(dep_table: &DepTable<SetUpDecl>) -> Result<Vec<usize>, ()> {
     Ok(dry_run_order)
 }
 
-pub fn run_set_ups() -> Result<(), ()> {
+pub async fn run_set_ups(ctx: &mut Context) -> Result<(), ()> {
     let dep_table = build_dep_table()?;
 
     let order = dry_run_tasks(&dep_table)?;
@@ -71,11 +70,17 @@ pub fn run_set_ups() -> Result<(), ()> {
 
     let mut task = dep_table.make_task_list();
     while let Some(ready) = task.pop_all_ready() {
-        println!("round");
         for idx in ready {
-            println!(" {}", &dep_table.name(idx));
-            task.set_status(idx, Status::Running);
-            task.set_status(idx, Status::Finished);
+            ctx.set_current_component(dep_table.name(idx));
+            println!("running {}", dep_table.name(idx));
+            match dep_table.decl(idx).set_up_fn {
+                SetUpFunc::Full(set_up_fn) => {
+                    task.set_status(idx, Status::Running);
+                    let r = (*set_up_fn)(ctx);
+                    println!("{:?}", r.err());
+                    task.set_status(idx, Status::Finished);
+                }
+            }
         }
     }
 

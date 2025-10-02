@@ -279,7 +279,7 @@ impl ITest {
     }
 
     async fn run_async(mut self) {
-        run_set_ups().unwrap();
+        run_set_ups(&mut self.context).await.unwrap();
 
         // self.context.max_component_name_len = self.components.max_component_name_len();
 
