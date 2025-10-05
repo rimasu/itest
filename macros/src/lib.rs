@@ -107,14 +107,11 @@ pub fn set_up(args: TokenStream, item: TokenStream) -> TokenStream {
         .collect();
 
     let fn_name = &input_fn.sig.ident;
+    let wrapper_name = Ident::new(&format!("__{}_set_up_wrapper", fn_name), fn_name.span());
 
-    let expanded = if is_async {
+    let wrapper_fn = if is_async {
         if is_unit_result {
-            let wrapper_name = Ident::new(&format!("__{}_set_up_wrapper", fn_name), fn_name.span());
             quote! {
-
-                #input_fn
-
                 fn #wrapper_name(ctx: ::itest_runner::Context) -> ::itest_runner::SetFnOutput {
                     Box::pin(async move {
                         match #fn_name(ctx).await {
@@ -123,23 +120,9 @@ pub fn set_up(args: TokenStream, item: TokenStream) -> TokenStream {
                         }
                     })
                 }
-
-                ::itest_runner::submit! {
-                    ::itest_runner::RegisteredSetUp{
-                    name: #setup_service,
-                    set_up_fn: #wrapper_name,
-                    deps:  &[#(#dep_strs),*],
-                    file: #file,
-                    line: #line,
-                    }
-                }
             }
         } else {
-            let wrapper_name = Ident::new(&format!("__{}_set_up_wrapper", fn_name), fn_name.span());
             quote! {
-
-                #input_fn
-
                 fn #wrapper_name(ctx: ::itest_runner::Context) -> ::itest_runner::SetFnOutput {
                     Box::pin(async move {
                         match #fn_name(ctx).await {
@@ -148,24 +131,10 @@ pub fn set_up(args: TokenStream, item: TokenStream) -> TokenStream {
                         }
                     })
                 }
-
-                ::itest_runner::submit! {
-                    ::itest_runner::RegisteredSetUp{
-                    name: #setup_service,
-                    set_up_fn: #wrapper_name,
-                    deps:  &[#(#dep_strs),*],
-                    file: #file,
-                    line: #line,
-                    }
-                }
             }
         }
-    } else {
-        let wrapper_name = Ident::new(&format!("__{}_set_up_wrapper", fn_name), fn_name.span());
-
+     } else {
         quote! {
-            #input_fn
-
             fn #wrapper_name(ctx: ::itest_runner::Context) -> ::itest_runner::SetFnOutput {
                 Box::pin(async move {
                     match #fn_name(ctx) {
@@ -174,15 +143,22 @@ pub fn set_up(args: TokenStream, item: TokenStream) -> TokenStream {
                     }
                 })
             }
+        }
+    };
 
-            ::itest_runner::submit! {
-                ::itest_runner::RegisteredSetUp{
-                    name: #setup_service,
-                    set_up_fn: #wrapper_name,
-                    deps:  &[#(#dep_strs),*],
-                    file: #file,
-                    line: #line,
-                }
+    let expanded = quote! {
+
+        #input_fn
+
+        #wrapper_fn
+
+        ::itest_runner::submit! {
+             ::itest_runner::RegisteredSetUp{
+                name: #setup_service,
+                set_up_fn: #wrapper_name,
+                deps:  &[#(#dep_strs),*],
+                file: #file,
+                line: #line,
             }
         }
     };
