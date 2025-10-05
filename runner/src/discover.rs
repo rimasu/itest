@@ -74,9 +74,15 @@ pub async fn run_set_ups(ctx: &mut Context) -> Result<(), ()> {
             ctx.set_current_component(dep_table.name(idx));
             println!("running {}", dep_table.name(idx));
             match dep_table.decl(idx).set_up_fn {
-                SetUpFunc::Full(set_up_fn) => {
+                SetUpFunc::Sync(set_up_fn) => {
                     task.set_status(idx, Status::Running);
                     let r = (*set_up_fn)(ctx);
+                    println!("{:?}", r.err());
+                    task.set_status(idx, Status::Finished);
+                }
+                SetUpFunc::Async(set_up_fn) => {
+                    task.set_status(idx, Status::Running);
+                    let r = (*set_up_fn)(ctx).await;
                     println!("{:?}", r.err());
                     task.set_status(idx, Status::Finished);
                 }

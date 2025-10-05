@@ -1,6 +1,6 @@
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{spanned::Spanned, Ident};
+use syn::{Ident, spanned::Spanned};
 
 #[proc_macro_attribute]
 pub fn itest(_attr: TokenStream, item: TokenStream) -> TokenStream {
@@ -30,6 +30,8 @@ pub fn set_up(args: TokenStream, item: TokenStream) -> TokenStream {
             return e.to_compile_error().into();
         }
     };
+
+    let is_async = input_fn.sig.asyncness.is_some();
 
     let span = input_fn.span().unwrap();
     let file = span.file();
@@ -61,15 +63,37 @@ pub fn set_up(args: TokenStream, item: TokenStream) -> TokenStream {
 
     let fn_name = &input_fn.sig.ident;
 
-    let expanded = quote! {
-        #input_fn
-        ::itest_runner::submit! {
-            ::itest_runner::RegisteredSetUp{
+    let expanded = if is_async {
+        let wrapper_name = Ident::new(&format!("__{}_async_wrapper", fn_name), fn_name.span());
+        quote! {
+
+            #input_fn
+
+            fn #wrapper_name(ctx: &mut Context) -> ::std::pin::Pin<Box<dyn ::std::future::Future<Output = Result<(), Box<dyn ::std::error::Error>>> + '_>> {
+                Box::pin(#fn_name(ctx))
+            }
+
+            ::itest_runner::submit! {
+                ::itest_runner::RegisteredSetUp{
                 name: #setup_service,
-                set_up_fn: ::itest_runner::SetUpFunc::Full(#fn_name),
+                set_up_fn: ::itest_runner::SetUpFunc::Async(#wrapper_name),
                 deps:  &[#(#dep_strs),*],
                 file: #file,
                 line: #line,
+                }
+            }
+        }
+    } else {
+        quote! {
+            #input_fn
+            ::itest_runner::submit! {
+                ::itest_runner::RegisteredSetUp{
+                    name: #setup_service,
+                    set_up_fn: ::itest_runner::SetUpFunc::Sync(#fn_name),
+                    deps:  &[#(#dep_strs),*],
+                    file: #file,
+                    line: #line,
+                }
             }
         }
     };

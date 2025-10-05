@@ -2,6 +2,7 @@
 
 use std::collections::HashMap;
 use std::iter::zip;
+use std::pin::Pin;
 use std::{fmt, path::PathBuf, process::Command};
 
 use std::time::Instant;
@@ -14,8 +15,8 @@ pub mod components;
 
 mod context;
 mod deptable;
-mod tasklist;
 mod discover;
+mod tasklist;
 
 pub use context::{Context, Param};
 
@@ -40,8 +41,13 @@ impl fmt::Display for Outcome {
     }
 }
 
+type SyncSetUpFn = fn(&mut Context) -> Result<(), Box<dyn std::error::Error>>;
+type AsyncSetUpFn =
+    fn(&mut Context) -> Pin<Box<dyn Future<Output = Result<(), Box<dyn std::error::Error>>> + '_>>;
+
 pub enum SetUpFunc {
-    Full(fn(&mut Context) -> Result<Box<dyn AsyncSetUp + 'static>, Box<dyn std::error::Error>>),
+    Sync(SyncSetUpFn),
+    Async(AsyncSetUpFn),
 }
 inventory::collect!(RegisteredSetUp);
 
@@ -214,8 +220,6 @@ struct Thing {
     set_up_fn: &'static SetUpFunc,
     wait_for: Vec<usize>,
 }
-
-
 
 fn run_tests() -> Conclusion {
     let args = Arguments::from_args();
