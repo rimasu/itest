@@ -37,23 +37,16 @@ impl fmt::Display for Outcome {
     }
 }
 
-type SyncSetUpFn = fn(Context) -> Result<(), Box<dyn std::error::Error>>;
+pub type SetFnOutput =
+    Pin<Box<dyn Future<Output = Result<Option<Box<dyn TearDown>>, Box<dyn std::error::Error>>>>>;
 
-type AsyncSetUpFn = fn(
-    Context,
-) -> Pin<
-    Box<dyn Future<Output = Result<Option<Box<dyn TearDown>>, Box<dyn std::error::Error>>>>,
->;
+pub type SetUpFn = fn(Context) -> SetFnOutput;
 
-pub enum SetUpFunc {
-    Sync(SyncSetUpFn),
-    Async(AsyncSetUpFn),
-}
 inventory::collect!(RegisteredSetUp);
 
 pub struct RegisteredSetUp {
     pub name: &'static str,
-    pub set_up_fn: SetUpFunc,
+    pub set_up_fn: SetUpFn,
     pub deps: &'static [&'static str],
     pub file: &'static str,
     pub line: usize,

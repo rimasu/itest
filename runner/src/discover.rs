@@ -1,13 +1,11 @@
 use std::fmt;
 
 use crate::{
-    GlobalContext, Context, RegisteredSetUp, SetUpFunc, TearDown,
-    deptable::{Builder, DepTable, Error},
-    tasklist::Status,
+    deptable::{Builder, DepTable}, tasklist::Status, Context, GlobalContext, RegisteredSetUp, SetUpFn, TearDown
 };
 
 struct SetUpDecl {
-    set_up_fn: &'static SetUpFunc,
+    set_up_fn: &'static SetUpFn,
     file: String,
     line: usize,
 }
@@ -88,10 +86,7 @@ pub async fn run_set_ups(ctx: &mut GlobalContext) -> Result<Vec<Box<dyn TearDown
 
 async fn run_set_up(
     ctx: Context,
-    set_up: &SetUpFunc,
+    set_up: &SetUpFn,
 ) -> Result<Option<Box<dyn TearDown>>, Box<dyn std::error::Error>> {
-    match set_up {
-        SetUpFunc::Sync(set_up) => (*set_up)(ctx).map(|_| None),
-        SetUpFunc::Async(set_up) => (*set_up)(ctx).await,
-    }
+    (*set_up)(ctx).await
 }

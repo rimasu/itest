@@ -110,12 +110,12 @@ pub fn set_up(args: TokenStream, item: TokenStream) -> TokenStream {
 
     let expanded = if is_async {
         if is_unit_result {
-            let wrapper_name = Ident::new(&format!("__{}_async_wrapper", fn_name), fn_name.span());
+            let wrapper_name = Ident::new(&format!("__{}_set_up_wrapper", fn_name), fn_name.span());
             quote! {
 
                 #input_fn
 
-                fn #wrapper_name(ctx: ::itest_runner::Context) -> ::std::pin::Pin<Box<dyn ::std::future::Future<Output = Result<Option<Box<dyn TearDown>>, Box<dyn ::std::error::Error>>>>> {
+                fn #wrapper_name(ctx: ::itest_runner::Context) -> ::itest_runner::SetFnOutput {
                     Box::pin(async move {
                         match #fn_name(ctx).await {
                             Ok(teardown) => Ok(None),
@@ -127,7 +127,7 @@ pub fn set_up(args: TokenStream, item: TokenStream) -> TokenStream {
                 ::itest_runner::submit! {
                     ::itest_runner::RegisteredSetUp{
                     name: #setup_service,
-                    set_up_fn: ::itest_runner::SetUpFunc::Async(#wrapper_name),
+                    set_up_fn: #wrapper_name,
                     deps:  &[#(#dep_strs),*],
                     file: #file,
                     line: #line,
@@ -135,12 +135,12 @@ pub fn set_up(args: TokenStream, item: TokenStream) -> TokenStream {
                 }
             }
         } else {
-            let wrapper_name = Ident::new(&format!("__{}_async_wrapper", fn_name), fn_name.span());
+            let wrapper_name = Ident::new(&format!("__{}_set_up_wrapper", fn_name), fn_name.span());
             quote! {
 
                 #input_fn
 
-                fn #wrapper_name(ctx: ::itest_runner::Context) -> ::std::pin::Pin<Box<dyn ::std::future::Future<Output = Result<Option<Box<dyn TearDown>>, Box<dyn ::std::error::Error>>>>> {
+                fn #wrapper_name(ctx: ::itest_runner::Context) -> ::itest_runner::SetFnOutput {
                     Box::pin(async move {
                         match #fn_name(ctx).await {
                             Ok(teardown) => Ok(Some(Box::new(teardown) as Box<dyn TearDown>)),
@@ -152,7 +152,7 @@ pub fn set_up(args: TokenStream, item: TokenStream) -> TokenStream {
                 ::itest_runner::submit! {
                     ::itest_runner::RegisteredSetUp{
                     name: #setup_service,
-                    set_up_fn: ::itest_runner::SetUpFunc::Async(#wrapper_name),
+                    set_up_fn: #wrapper_name,
                     deps:  &[#(#dep_strs),*],
                     file: #file,
                     line: #line,
@@ -161,12 +161,24 @@ pub fn set_up(args: TokenStream, item: TokenStream) -> TokenStream {
             }
         }
     } else {
+        let wrapper_name = Ident::new(&format!("__{}_set_up_wrapper", fn_name), fn_name.span());
+
         quote! {
             #input_fn
+
+            fn #wrapper_name(ctx: ::itest_runner::Context) -> ::itest_runner::SetFnOutput {
+                Box::pin(async move {
+                    match #fn_name(ctx) {
+                        Ok(teardown) => Ok(None),
+                        Err(e) => Err(e),
+                    }
+                })
+            }
+
             ::itest_runner::submit! {
                 ::itest_runner::RegisteredSetUp{
                     name: #setup_service,
-                    set_up_fn: ::itest_runner::SetUpFunc::Sync(#fn_name),
+                    set_up_fn: #wrapper_name,
                     deps:  &[#(#dep_strs),*],
                     file: #file,
                     line: #line,
