@@ -65,30 +65,29 @@ pub async fn run_set_ups(ctx: &mut Context) -> Result<(), ()> {
     let dep_table = build_dep_table()?;
 
     let order = dry_run_tasks(&dep_table)?;
-
-    println!("drp run order {:?}", order);
+    println!("Report order: {:?}", order);
 
     let mut task = dep_table.make_task_list();
     while let Some(ready) = task.pop_all_ready() {
         for idx in ready {
             ctx.set_current_component(dep_table.name(idx));
-            println!("running {}", dep_table.name(idx));
-            match dep_table.decl(idx).set_up_fn {
-                SetUpFunc::Sync(set_up_fn) => {
-                    task.set_status(idx, Status::Running);
-                    let r = (*set_up_fn)(ctx);
-                    println!("{:?}", r.err());
-                    task.set_status(idx, Status::Finished);
-                }
-                SetUpFunc::Async(set_up_fn) => {
-                    task.set_status(idx, Status::Running);
-                    let r = (*set_up_fn)(ctx).await;
-                    println!("{:?}", r.err());
-                    task.set_status(idx, Status::Finished);
-                }
-            }
+            let set_up = dep_table.decl(idx).set_up_fn;
+            task.set_status(idx, Status::Running);
+            let r = run_set_up(ctx, set_up).await;
+            println!("{:?}", r);
+            task.set_status(idx, Status::Finished);
         }
     }
 
     Ok(())
+}
+
+async fn run_set_up(
+    ctx: &mut Context,
+    set_up: &SetUpFunc,
+) -> Result<(), Box<dyn std::error::Error>> {
+    match set_up {
+        SetUpFunc::Sync(set_up) => (*set_up)(ctx),
+        SetUpFunc::Async(set_up) => (*set_up)(ctx).await,
+    }
 }

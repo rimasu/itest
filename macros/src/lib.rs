@@ -101,6 +101,7 @@ pub fn set_up(args: TokenStream, item: TokenStream) -> TokenStream {
     expanded.into()
 }
 
+
 #[proc_macro_attribute]
 pub fn depends_on(_args: TokenStream, input: TokenStream) -> TokenStream {
     // The depends attribute is handled by the set_up macro
