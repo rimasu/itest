@@ -94,14 +94,27 @@ fn create_set_up_wrapper(
             }
         }
     } else {
-        quote! {
-            fn #wrapper_name(ctx: ::itest_runner::Context) -> ::itest_runner::SetFnOutput {
-                Box::pin(async move {
-                    match #fn_name(ctx) {
-                        Ok(teardown) => Ok(None),
-                        Err(e) => Err(e),
-                    }
-                })
+        if is_unit_result {
+            quote! {
+                fn #wrapper_name(ctx: ::itest_runner::Context) -> ::itest_runner::SetFnOutput {
+                    Box::pin(async move {
+                        match #fn_name(ctx) {
+                            Ok(teardown) => Ok(None),
+                            Err(e) => Err(e),
+                        }
+                    })
+                }
+            }
+        } else {
+            quote! {
+                fn #wrapper_name(ctx: ::itest_runner::Context) -> ::itest_runner::SetFnOutput {
+                    Box::pin(async move {
+                        match #fn_name(ctx) {
+                            Ok(teardown) => Ok(Some(Box::new(teardown) as Box<dyn TearDown>)),
+                            Err(e) => Err(e),
+                        }
+                    })
+                }
             }
         }
     }
