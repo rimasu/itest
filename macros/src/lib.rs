@@ -115,14 +115,19 @@ pub fn set_up(args: TokenStream, item: TokenStream) -> TokenStream {
 
                 #input_fn
 
-                fn #wrapper_name(ctx: ::itest_runner::Context) -> ::std::pin::Pin<Box<dyn ::std::future::Future<Output = Result<(), Box<dyn ::std::error::Error>>> + '_>> {
-                    Box::pin(#fn_name(ctx))
+                fn #wrapper_name(ctx: ::itest_runner::Context) -> ::std::pin::Pin<Box<dyn ::std::future::Future<Output = Result<Option<Box<dyn TearDown>>, Box<dyn ::std::error::Error>>>>> {
+                    Box::pin(async move {
+                        match #fn_name(ctx).await {
+                            Ok(teardown) => Ok(None),
+                            Err(e) => Err(e),
+                        }
+                    })
                 }
 
                 ::itest_runner::submit! {
                     ::itest_runner::RegisteredSetUp{
                     name: #setup_service,
-                    set_up_fn: ::itest_runner::SetUpFunc::Async1(#wrapper_name),
+                    set_up_fn: ::itest_runner::SetUpFunc::Async(#wrapper_name),
                     deps:  &[#(#dep_strs),*],
                     file: #file,
                     line: #line,
@@ -135,10 +140,10 @@ pub fn set_up(args: TokenStream, item: TokenStream) -> TokenStream {
 
                 #input_fn
 
-                fn #wrapper_name(ctx: ::itest_runner::Context) -> ::std::pin::Pin<Box<dyn ::std::future::Future<Output = Result<Box<dyn TearDown>, Box<dyn ::std::error::Error>>>>> {
+                fn #wrapper_name(ctx: ::itest_runner::Context) -> ::std::pin::Pin<Box<dyn ::std::future::Future<Output = Result<Option<Box<dyn TearDown>>, Box<dyn ::std::error::Error>>>>> {
                     Box::pin(async move {
                         match #fn_name(ctx).await {
-                            Ok(teardown) => Ok(Box::new(teardown) as Box<dyn TearDown>),
+                            Ok(teardown) => Ok(Some(Box::new(teardown) as Box<dyn TearDown>)),
                             Err(e) => Err(e),
                         }
                     })
@@ -147,7 +152,7 @@ pub fn set_up(args: TokenStream, item: TokenStream) -> TokenStream {
                 ::itest_runner::submit! {
                     ::itest_runner::RegisteredSetUp{
                     name: #setup_service,
-                    set_up_fn: ::itest_runner::SetUpFunc::Async2(#wrapper_name),
+                    set_up_fn: ::itest_runner::SetUpFunc::Async(#wrapper_name),
                     deps:  &[#(#dep_strs),*],
                     file: #file,
                     line: #line,

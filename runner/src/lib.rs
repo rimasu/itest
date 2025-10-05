@@ -14,7 +14,7 @@ mod deptable;
 mod discover;
 mod tasklist;
 
-pub use context::{GlobalContext, Context, Param};
+pub use context::{Context, GlobalContext, Param};
 
 use libtest_mimic::{Arguments, Conclusion, Trial};
 
@@ -39,18 +39,15 @@ impl fmt::Display for Outcome {
 
 type SyncSetUpFn = fn(Context) -> Result<(), Box<dyn std::error::Error>>;
 
-type AsyncSetUpFn1 =
-    fn(Context) -> Pin<Box<dyn Future<Output = Result<(), Box<dyn std::error::Error>>>>>;
-
-type AsyncSetUpFn2 =
-    fn(
-        Context,
-    ) -> Pin<Box<dyn Future<Output = Result<Box<dyn TearDown>, Box<dyn std::error::Error>>>>>;
+type AsyncSetUpFn = fn(
+    Context,
+) -> Pin<
+    Box<dyn Future<Output = Result<Option<Box<dyn TearDown>>, Box<dyn std::error::Error>>>>,
+>;
 
 pub enum SetUpFunc {
     Sync(SyncSetUpFn),
-    Async1(AsyncSetUpFn1),
-    Async2(AsyncSetUpFn2),
+    Async(AsyncSetUpFn),
 }
 inventory::collect!(RegisteredSetUp);
 

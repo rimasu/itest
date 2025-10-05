@@ -92,7 +92,6 @@ async fn run_set_up(
 ) -> Result<Option<Box<dyn TearDown>>, Box<dyn std::error::Error>> {
     match set_up {
         SetUpFunc::Sync(set_up) => (*set_up)(ctx).map(|_| None),
-        SetUpFunc::Async1(set_up) => (*set_up)(ctx).await.map(|_| None),
-        SetUpFunc::Async2(set_up) => (*set_up)(ctx).await.map(Some),
+        SetUpFunc::Async(set_up) => (*set_up)(ctx).await,
     }
 }
