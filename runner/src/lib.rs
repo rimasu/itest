@@ -1,11 +1,7 @@
 #![feature(exit_status_error)]
 
-use std::collections::HashMap;
-use std::iter::zip;
 use std::pin::Pin;
 use std::{fmt, path::PathBuf, process::Command};
-
-use std::time::Instant;
 
 use async_trait::async_trait;
 pub use inventory::{collect, submit};
@@ -18,7 +14,7 @@ mod deptable;
 mod discover;
 mod tasklist;
 
-pub use context::{Context, Param};
+pub use context::{GlobalContext, Context, Param};
 
 use libtest_mimic::{Arguments, Conclusion, Trial};
 
@@ -41,13 +37,20 @@ impl fmt::Display for Outcome {
     }
 }
 
-type SyncSetUpFn = fn(&mut Context) -> Result<(), Box<dyn std::error::Error>>;
-type AsyncSetUpFn =
-    fn(&mut Context) -> Pin<Box<dyn Future<Output = Result<(), Box<dyn std::error::Error>>> + '_>>;
+type SyncSetUpFn = fn(Context) -> Result<(), Box<dyn std::error::Error>>;
+
+type AsyncSetUpFn1 =
+    fn(Context) -> Pin<Box<dyn Future<Output = Result<(), Box<dyn std::error::Error>>>>>;
+
+type AsyncSetUpFn2 =
+    fn(
+        Context,
+    ) -> Pin<Box<dyn Future<Output = Result<Box<dyn TearDown>, Box<dyn std::error::Error>>>>>;
 
 pub enum SetUpFunc {
     Sync(SyncSetUpFn),
-    Async(AsyncSetUpFn),
+    Async1(AsyncSetUpFn1),
+    Async2(AsyncSetUpFn2),
 }
 inventory::collect!(RegisteredSetUp);
 
@@ -65,13 +68,12 @@ pub struct RegisteredITest {
 }
 inventory::collect!(RegisteredITest);
 
-
 // pub type SetUpResult = Result<Box<dyn TearDown + 'static>, Box<dyn std::error::Error>>;
 
-// #[async_trait]
-// pub trait TearDown {
-//     async fn tear_down(&mut self) -> Result<(), Box<dyn std::error::Error>>;
-// }
+#[async_trait]
+pub trait TearDown {
+    async fn tear_down(&mut self) -> Result<(), Box<dyn std::error::Error>>;
+}
 
 // struct Component {
 //     name: String,
@@ -208,12 +210,6 @@ inventory::collect!(RegisteredITest);
 //     }
 // }
 
-// struct Thing {
-//     name: String,
-//     set_up_fn: &'static SetUpFunc,
-//     wait_for: Vec<usize>,
-// }
-
 fn run_tests() -> Conclusion {
     let args = Arguments::from_args();
     let mut tests = Vec::new();
@@ -229,17 +225,17 @@ fn run_tests() -> Conclusion {
 }
 
 pub struct ITest {
-    context: Context,
+    context: GlobalContext,
     //components: Components,
 }
 
 impl ITest {
     pub fn new() -> Self {
         let workspace_root_dir = find_workspace_root_dir();
-        let context = Context::new(&workspace_root_dir);
+        let context = GlobalContext::new(&workspace_root_dir);
         Self {
             context,
-         //   components: Components::default(),
+            //   components: Components::default(),
         }
     }
 }
@@ -264,11 +260,6 @@ impl ITest {
         self.context.set_global_param(key, value);
         self
     }
-
-    // pub fn with(mut self, name: &str, set_up_fn: SetupFunction) -> Self {
-    //     self.components.add_component(name, set_up_fn);
-    //     self
-    // }
 
     pub fn run(self) {
         let rt = tokio::runtime::Runtime::new().unwrap();

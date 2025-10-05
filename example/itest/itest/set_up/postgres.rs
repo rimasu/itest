@@ -1,8 +1,8 @@
-use itest_runner::{Context, set_up};
+use itest_runner::{components::container::ContainerTearDown, set_up, GlobalContext, Context, TearDown};
 use testcontainers::{GenericImage, ImageExt, core::IntoContainerPort, runners::AsyncRunner};
 
 #[set_up(Postgres)]
-async fn set_up(ctx: &mut Context) -> Result<(), Box<dyn std::error::Error>> {
+async fn set_up(ctx: Context) -> Result<impl TearDown, Box<dyn std::error::Error>> {
     let image = GenericImage::new("postgres", "18rc1")
         .with_container_name("itest-postgres")
         .with_env_var("POSTGRES_USER", "test_user")
@@ -17,5 +17,5 @@ async fn set_up(ctx: &mut Context) -> Result<(), Box<dyn std::error::Error>> {
 
     let container = image.start().await?;
 
-    Ok(())
+    Ok(ContainerTearDown::new2(container))
 }

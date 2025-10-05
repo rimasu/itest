@@ -1,28 +1,39 @@
-use std::result::Result;
+use async_trait::async_trait;
+use testcontainers::{ContainerAsync, GenericImage};
 
-use testcontainers::{ContainerRequest, GenericImage, runners::AsyncRunner};
+use crate::TearDown;
 
-// pub async fn set_up_container(
-//     req: ContainerRequest<GenericImage>,
-// ) -> Result<(), Box<dyn std::error::Error>> {
-//     let container = self.req.take().unwrap().start().await?;
-//     Ok(())
-// }
+pub struct ContainerTearDown {
+    container: Option<ContainerAsync<GenericImage>>,
+}
 
-// #[async_trait]
-// impl TearDown for ContainerComponent {
-//     async fn tear_down(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-//         if let Some(container) = self.container.take() {
-//             container.stop().await?;
-//             container.rm().await?;
-//         }
+impl ContainerTearDown {
+    pub fn new2(container: ContainerAsync<GenericImage>) -> Self {
+        Self {
+            container: Some(container),
+        }
+    }
+    pub fn new(container: ContainerAsync<GenericImage>) -> Box<dyn TearDown> {
+        Box::new(Self {
+            container: Some(container),
+        })
+    }
+}
 
-//         // // for now just write the logs at the end
-//         // dump_to_file(&mut self.stdout, &self.stdout_file).unwrap();
-//         // dump_to_file(&mut self.stderr, &self.stderr_file).unwrap();
-//         Ok(())
-//     }
-// }
+#[async_trait]
+impl TearDown for ContainerTearDown {
+    async fn tear_down(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        if let Some(container) = self.container.take() {
+            container.stop().await?;
+            container.rm().await?;
+        }
+
+        // // for now just write the logs at the end
+        // dump_to_file(&mut self.stdout, &self.stdout_file).unwrap();
+        // dump_to_file(&mut self.stderr, &self.stderr_file).unwrap();
+        Ok(())
+    }
+}
 
 // fn dump_to_file(reader: &mut Box<dyn BufRead + Send>, file_path: &Path) -> io::Result<()> {
 //     let file = File::create(file_path)?;

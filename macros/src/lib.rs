@@ -1,6 +1,6 @@
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{Ident, spanned::Spanned};
+use syn::{Error, Ident, ReturnType, spanned::Spanned};
 
 #[proc_macro_attribute]
 pub fn itest(_attr: TokenStream, item: TokenStream) -> TokenStream {
@@ -22,6 +22,47 @@ pub fn itest(_attr: TokenStream, item: TokenStream) -> TokenStream {
     expanded.into()
 }
 
+fn is_unit_result(return_type: &ReturnType) -> Result<bool, Error> {
+    match return_type {
+        syn::ReturnType::Default => Err(Error::new(return_type.span(), "expect a return type")),
+        syn::ReturnType::Type(_, t) => match &**t {
+            syn::Type::Path(type_path) => {
+                // Get the last segment (should be "Result")
+                let last_segment = type_path.path.segments.last();
+
+                match last_segment {
+                    Some(segment) if segment.ident == "Result" => {
+                        // Extract the generic arguments
+                        match &segment.arguments {
+                            syn::PathArguments::AngleBracketed(args) => {
+                                // First generic argument is the Ok type
+                                if let Some(syn::GenericArgument::Type(ok_type)) = args.args.first()
+                                {
+                                    Ok(match ok_type {
+                                        syn::Type::Tuple(tuple) if tuple.elems.is_empty() => true, // is unit,
+                                        _ => false, // It's a concrete type
+                                    })
+                                } else {
+                                    Err(Error::new(
+                                        segment.span(),
+                                        "Result must have generic arguments",
+                                    ))
+                                }
+                            }
+                            _ => Err(Error::new(
+                                segment.span(),
+                                "Result must have angle-bracketed arguments",
+                            )),
+                        }
+                    }
+                    _ => Err(Error::new(type_path.span(), "Expected Result return type")),
+                }
+            }
+            _ => Err(Error::new(t.span(), "Expected a Result output")),
+        },
+    }
+}
+
 #[proc_macro_attribute]
 pub fn set_up(args: TokenStream, item: TokenStream) -> TokenStream {
     let input_fn: syn::ItemFn = match syn::parse(item) {
@@ -32,6 +73,10 @@ pub fn set_up(args: TokenStream, item: TokenStream) -> TokenStream {
     };
 
     let is_async = input_fn.sig.asyncness.is_some();
+    let is_unit_result = match is_unit_result(&input_fn.sig.output) {
+        Ok(flag) => flag,
+        Err(e) => return e.to_compile_error().into(),
+    };
 
     let span = input_fn.span().unwrap();
     let file = span.file();
@@ -64,22 +109,49 @@ pub fn set_up(args: TokenStream, item: TokenStream) -> TokenStream {
     let fn_name = &input_fn.sig.ident;
 
     let expanded = if is_async {
-        let wrapper_name = Ident::new(&format!("__{}_async_wrapper", fn_name), fn_name.span());
-        quote! {
+        if is_unit_result {
+            let wrapper_name = Ident::new(&format!("__{}_async_wrapper", fn_name), fn_name.span());
+            quote! {
 
-            #input_fn
+                #input_fn
 
-            fn #wrapper_name(ctx: &mut Context) -> ::std::pin::Pin<Box<dyn ::std::future::Future<Output = Result<(), Box<dyn ::std::error::Error>>> + '_>> {
-                Box::pin(#fn_name(ctx))
+                fn #wrapper_name(ctx: ::itest_runner::Context) -> ::std::pin::Pin<Box<dyn ::std::future::Future<Output = Result<(), Box<dyn ::std::error::Error>>> + '_>> {
+                    Box::pin(#fn_name(ctx))
+                }
+
+                ::itest_runner::submit! {
+                    ::itest_runner::RegisteredSetUp{
+                    name: #setup_service,
+                    set_up_fn: ::itest_runner::SetUpFunc::Async1(#wrapper_name),
+                    deps:  &[#(#dep_strs),*],
+                    file: #file,
+                    line: #line,
+                    }
+                }
             }
+        } else {
+            let wrapper_name = Ident::new(&format!("__{}_async_wrapper", fn_name), fn_name.span());
+            quote! {
 
-            ::itest_runner::submit! {
-                ::itest_runner::RegisteredSetUp{
-                name: #setup_service,
-                set_up_fn: ::itest_runner::SetUpFunc::Async(#wrapper_name),
-                deps:  &[#(#dep_strs),*],
-                file: #file,
-                line: #line,
+                #input_fn
+
+                fn #wrapper_name(ctx: ::itest_runner::Context) -> ::std::pin::Pin<Box<dyn ::std::future::Future<Output = Result<Box<dyn TearDown>, Box<dyn ::std::error::Error>>>>> {
+                    Box::pin(async move {
+                        match #fn_name(ctx).await {
+                            Ok(teardown) => Ok(Box::new(teardown) as Box<dyn TearDown>),
+                            Err(e) => Err(e),
+                        }
+                    })
+                }
+
+                ::itest_runner::submit! {
+                    ::itest_runner::RegisteredSetUp{
+                    name: #setup_service,
+                    set_up_fn: ::itest_runner::SetUpFunc::Async2(#wrapper_name),
+                    deps:  &[#(#dep_strs),*],
+                    file: #file,
+                    line: #line,
+                    }
                 }
             }
         }
@@ -100,7 +172,6 @@ pub fn set_up(args: TokenStream, item: TokenStream) -> TokenStream {
 
     expanded.into()
 }
-
 
 #[proc_macro_attribute]
 pub fn depends_on(_args: TokenStream, input: TokenStream) -> TokenStream {

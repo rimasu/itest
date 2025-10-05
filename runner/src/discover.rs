@@ -1,7 +1,7 @@
 use std::fmt;
 
 use crate::{
-    Context, RegisteredSetUp, SetUpFunc,
+    GlobalContext, Context, RegisteredSetUp, SetUpFunc, TearDown,
     deptable::{Builder, DepTable, Error},
     tasklist::Status,
 };
@@ -61,33 +61,38 @@ fn dry_run_tasks(dep_table: &DepTable<SetUpDecl>) -> Result<Vec<usize>, ()> {
     Ok(dry_run_order)
 }
 
-pub async fn run_set_ups(ctx: &mut Context) -> Result<(), ()> {
+pub async fn run_set_ups(ctx: &mut GlobalContext) -> Result<Vec<Box<dyn TearDown>>, ()> {
     let dep_table = build_dep_table()?;
 
+    let mut tear_downs = Vec::new();
     let order = dry_run_tasks(&dep_table)?;
     println!("Report order: {:?}", order);
 
     let mut task = dep_table.make_task_list();
     while let Some(ready) = task.pop_all_ready() {
         for idx in ready {
-            ctx.set_current_component(dep_table.name(idx));
+            println!("running {}", dep_table.name(idx));
+            let context2 = ctx.create_component_context(dep_table.name(idx));
             let set_up = dep_table.decl(idx).set_up_fn;
             task.set_status(idx, Status::Running);
-            let r = run_set_up(ctx, set_up).await;
-            println!("{:?}", r);
+            let r = run_set_up(context2, set_up).await;
             task.set_status(idx, Status::Finished);
+            if let Ok(Some(tear_down)) = r {
+                tear_downs.push(tear_down);
+            }
         }
     }
 
-    Ok(())
+    Ok(tear_downs)
 }
 
 async fn run_set_up(
-    ctx: &mut Context,
+    ctx: Context,
     set_up: &SetUpFunc,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<Option<Box<dyn TearDown>>, Box<dyn std::error::Error>> {
     match set_up {
-        SetUpFunc::Sync(set_up) => (*set_up)(ctx),
-        SetUpFunc::Async(set_up) => (*set_up)(ctx).await,
+        SetUpFunc::Sync(set_up) => (*set_up)(ctx).map(|_| None),
+        SetUpFunc::Async1(set_up) => (*set_up)(ctx).await.map(|_| None),
+        SetUpFunc::Async2(set_up) => (*set_up)(ctx).await.map(Some),
     }
 }
