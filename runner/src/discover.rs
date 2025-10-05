@@ -1,7 +1,9 @@
 use std::fmt;
 
 use crate::{
-    deptable::{Builder, DepTable}, tasklist::Status, Context, GlobalContext, RegisteredSetUp, SetUpFn, TearDown
+    Context, GlobalContext, RegisteredSetUp, SetUpFn, TearDown,
+    deptable::{Builder, DepTable},
+    tasklist::Status,
 };
 
 struct SetUpDecl {
@@ -59,7 +61,7 @@ fn dry_run_tasks(dep_table: &DepTable<SetUpDecl>) -> Result<Vec<usize>, ()> {
     Ok(dry_run_order)
 }
 
-pub async fn run_set_ups(ctx: &mut GlobalContext) -> Result<Vec<Box<dyn TearDown>>, ()> {
+pub async fn run_set_ups(ctx: &mut GlobalContext) -> Result<Vec<(String, Box<dyn TearDown>)>, ()> {
     let dep_table = build_dep_table()?;
 
     let mut tear_downs = Vec::new();
@@ -76,7 +78,7 @@ pub async fn run_set_ups(ctx: &mut GlobalContext) -> Result<Vec<Box<dyn TearDown
             let r = run_set_up(context2, set_up).await;
             task.set_status(idx, Status::Finished);
             if let Ok(Some(tear_down)) = r {
-                tear_downs.push(tear_down);
+                tear_downs.push((dep_table.name(idx).to_owned(), tear_down));
             }
         }
     }

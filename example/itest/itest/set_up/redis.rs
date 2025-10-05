@@ -1,4 +1,4 @@
-use itest_runner::{components::container::ContainerTearDown, set_up, GlobalContext, Context, TearDown};
+use itest_runner::{Context, TearDown, components::container::ContainerTearDown, set_up};
 
 use testcontainers::{
     GenericImage, ImageExt,
@@ -16,5 +16,5 @@ async fn set_up(ctx: Context) -> Result<impl TearDown, Box<dyn std::error::Error
 
     let container = image.start().await?;
 
-    Ok(ContainerTearDown::new2(container))
+    Ok(ContainerTearDown::new(container))
 }

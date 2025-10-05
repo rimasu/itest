@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use itest_runner::{
-    components::container::ContainerTearDown, depends_on, set_up, Context, TearDown
+    Context, TearDown, components::container::ContainerTearDown, depends_on, set_up,
 };
 use testcontainers::{GenericImage, ImageExt, core::Mount, runners::AsyncRunner};
 
@@ -21,5 +21,5 @@ async fn set_up(ctx: Context) -> Result<impl TearDown, Box<dyn std::error::Error
 
     let container = image.start().await?;
 
-    Ok(ContainerTearDown::new2(container))
+    Ok(ContainerTearDown::new(container))
 }

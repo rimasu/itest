@@ -1,4 +1,4 @@
-use itest_runner::{components::localcli::LocalCliSetUp, depends_on, set_up, GlobalContext, Context};
+use itest_runner::{Context, components::localcli::LocalCliSetUp, depends_on, set_up};
 
 #[set_up(Schema)]
 #[depends_on(Postgres)]

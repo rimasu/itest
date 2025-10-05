@@ -63,6 +63,50 @@ fn is_unit_result(return_type: &ReturnType) -> Result<bool, Error> {
     }
 }
 
+fn create_set_up_wrapper(
+    fn_name: &Ident,
+    wrapper_name: &Ident,
+    is_async: bool,
+    is_unit_result: bool,
+) -> proc_macro2::TokenStream {
+    if is_async {
+        if is_unit_result {
+            quote! {
+                fn #wrapper_name(ctx: ::itest_runner::Context) -> ::itest_runner::SetFnOutput {
+                    Box::pin(async move {
+                        match #fn_name(ctx).await {
+                            Ok(teardown) => Ok(None),
+                            Err(e) => Err(e),
+                        }
+                    })
+                }
+            }
+        } else {
+            quote! {
+                fn #wrapper_name(ctx: ::itest_runner::Context) -> ::itest_runner::SetFnOutput {
+                    Box::pin(async move {
+                        match #fn_name(ctx).await {
+                            Ok(teardown) => Ok(Some(Box::new(teardown) as Box<dyn TearDown>)),
+                            Err(e) => Err(e),
+                        }
+                    })
+                }
+            }
+        }
+    } else {
+        quote! {
+            fn #wrapper_name(ctx: ::itest_runner::Context) -> ::itest_runner::SetFnOutput {
+                Box::pin(async move {
+                    match #fn_name(ctx) {
+                        Ok(teardown) => Ok(None),
+                        Err(e) => Err(e),
+                    }
+                })
+            }
+        }
+    }
+}
+
 #[proc_macro_attribute]
 pub fn set_up(args: TokenStream, item: TokenStream) -> TokenStream {
     let input_fn: syn::ItemFn = match syn::parse(item) {
@@ -109,42 +153,7 @@ pub fn set_up(args: TokenStream, item: TokenStream) -> TokenStream {
     let fn_name = &input_fn.sig.ident;
     let wrapper_name = Ident::new(&format!("__{}_set_up_wrapper", fn_name), fn_name.span());
 
-    let wrapper_fn = if is_async {
-        if is_unit_result {
-            quote! {
-                fn #wrapper_name(ctx: ::itest_runner::Context) -> ::itest_runner::SetFnOutput {
-                    Box::pin(async move {
-                        match #fn_name(ctx).await {
-                            Ok(teardown) => Ok(None),
-                            Err(e) => Err(e),
-                        }
-                    })
-                }
-            }
-        } else {
-            quote! {
-                fn #wrapper_name(ctx: ::itest_runner::Context) -> ::itest_runner::SetFnOutput {
-                    Box::pin(async move {
-                        match #fn_name(ctx).await {
-                            Ok(teardown) => Ok(Some(Box::new(teardown) as Box<dyn TearDown>)),
-                            Err(e) => Err(e),
-                        }
-                    })
-                }
-            }
-        }
-     } else {
-        quote! {
-            fn #wrapper_name(ctx: ::itest_runner::Context) -> ::itest_runner::SetFnOutput {
-                Box::pin(async move {
-                    match #fn_name(ctx) {
-                        Ok(teardown) => Ok(None),
-                        Err(e) => Err(e),
-                    }
-                })
-            }
-        }
-    };
+    let wrapper_fn = create_set_up_wrapper(fn_name, &wrapper_name, is_async, is_unit_result);
 
     let expanded = quote! {
 

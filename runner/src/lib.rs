@@ -257,19 +257,16 @@ impl ITest {
     }
 
     async fn run_async(mut self) {
-        run_set_ups(&mut self.context).await.unwrap();
+        let tear_downs = run_set_ups(&mut self.context).await.unwrap();
 
-        // self.context.max_component_name_len = self.components.max_component_name_len();
+        let conculsion = Some(run_tests());
 
-        // let set_up_status = self.components.set_up(&mut self.context).await;
-
-        // let conculsion = if set_up_status == Outcome::Ok {
-        //     Some(run_tests())
-        // } else {
-        //     None
-        // };
-
-        // let tear_down_status = self.components.tear_down(&mut self.context).await;
+        let mut tear_down_result = Vec::new();
+        for (name, mut tear_down) in tear_downs.into_iter().rev() {
+            println!("tear down {} ", name);
+            let result = (*tear_down).tear_down().await;
+            tear_down_result.push(result);
+        }
 
         // for component in &self.components.components {
         //     if let Some(err) = &component.set_up_err {
@@ -288,8 +285,8 @@ impl ITest {
         // println!("    tests: TBC");
         // println!("tear down: {}", tear_down_status);
 
-        // if let Some(conclusion) = conculsion {
-        //     conclusion.exit();
-        // }
+        if let Some(conclusion) = conculsion {
+            conclusion.exit();
+        }
     }
 }
