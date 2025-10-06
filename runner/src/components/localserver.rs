@@ -49,45 +49,29 @@ impl LocalServerSetUp {
 
     pub fn start(self, ctx: Context) -> Result<impl TearDown, Box<dyn std::error::Error>> {
         let binary = ctx.workspace_binary_path(&self.name);
+
+        let stdout_file = File::create(ctx.log_file_path("stdout"))?;
+        let stderr_file = File::create(ctx.log_file_path("stderr"))?;
+
         let child = Command::new(binary)
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
+            .stdout(Stdio::from(stdout_file))
+            .stderr(Stdio::from(stderr_file))
             .envs(self.envs.clone())
             .args(&self.args)
             .spawn()?;
 
-        let stdout_file = ctx.log_file_path("stdout");
-        let stderr_file = ctx.log_file_path("stderr");
-
-        Ok(LocalRunnerComponent {
-            child,
-            stdout_file,
-            stderr_file,
-        })
+        Ok(LocalRunnerComponent { child })
     }
 }
 
 pub struct LocalRunnerComponent {
     child: Child,
-    stdout_file: PathBuf,
-    stderr_file: PathBuf,
 }
 
 #[async_trait]
 impl TearDown for LocalRunnerComponent {
     async fn tear_down(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        
         self.child.kill()?;
-
-        if let Some(stdout) = self.child.stdout.take() {
-            let mut stdout = BufReader::new(stdout);
-            dump_to_file(&mut stdout, &self.stdout_file).unwrap();
-        }
-
-        if let Some(stderr) = self.child.stderr.take() {
-            let mut stderr = BufReader::new(stderr);
-            dump_to_file(&mut stderr, &self.stderr_file).unwrap();
-        }
 
         Ok(())
     }

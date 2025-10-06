@@ -1,7 +1,7 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
     fmt, fs,
-    io::{self, Write},
+    io::{self, BufRead, Write},
     path::{Path, PathBuf},
     pin::Pin,
     sync::Arc,
@@ -108,7 +108,8 @@ impl Context {
     //     }
     // }
 
-    pub fn monitor1(&self, name: &str, mut reader: Pin<Box<dyn AsyncBufRead + Send>>) {
+
+    pub fn monitor_async(&self, name: &str, mut reader: Pin<Box<dyn AsyncBufRead + Send>>) {
         let path = self.log_file_path(name);
         let handle = tokio::spawn(async move {
             let mut file = tokio::fs::File::create(path).await?;
