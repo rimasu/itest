@@ -67,55 +67,35 @@ fn create_set_up_wrapper(
     fn_name: &Ident,
     wrapper_name: &Ident,
     is_async: bool,
+    has_context_arg: bool,
     is_unit_result: bool,
 ) -> proc_macro2::TokenStream {
-    if is_async {
-        if is_unit_result {
-            quote! {
-                fn #wrapper_name(ctx: ::itest_runner::Context) -> ::itest_runner::SetFnOutput {
-                    Box::pin(async move {
-                        match #fn_name(ctx).await {
-                            Ok(teardown) => Ok(None),
-                            Err(e) => Err(e),
-                        }
-                    })
-                }
-            }
-        } else {
-            quote! {
-                fn #wrapper_name(ctx: ::itest_runner::Context) -> ::itest_runner::SetFnOutput {
-                    Box::pin(async move {
-                        match #fn_name(ctx).await {
-                            Ok(teardown) => Ok(Some(Box::new(teardown) as Box<dyn TearDown>)),
-                            Err(e) => Err(e),
-                        }
-                    })
-                }
-            }
-        }
+    let ok_result = if is_unit_result {
+        quote! { Ok(None) }
     } else {
-        if is_unit_result {
-            quote! {
-                fn #wrapper_name(ctx: ::itest_runner::Context) -> ::itest_runner::SetFnOutput {
-                    Box::pin(async move {
-                        match #fn_name(ctx) {
-                            Ok(teardown) => Ok(None),
-                            Err(e) => Err(e),
-                        }
-                    })
+        quote! { Ok(Some(Box::new(teardown) as Box<dyn TearDown>)) }
+    };
+
+    let call = if has_context_arg {
+        quote! { #fn_name(ctx) }
+    } else {
+        quote! { #fn_name() }
+    };
+
+    let async_call = if is_async {
+        quote! { #call.await }
+    } else {
+        quote! { #call }
+    };
+
+    quote! {
+        fn #wrapper_name(ctx: ::itest_runner::Context) -> ::itest_runner::SetFnOutput {
+            Box::pin(async move {
+                match #async_call {
+                    Ok(teardown) => #ok_result,
+                    Err(e) => Err(e),
                 }
-            }
-        } else {
-            quote! {
-                fn #wrapper_name(ctx: ::itest_runner::Context) -> ::itest_runner::SetFnOutput {
-                    Box::pin(async move {
-                        match #fn_name(ctx) {
-                            Ok(teardown) => Ok(Some(Box::new(teardown) as Box<dyn TearDown>)),
-                            Err(e) => Err(e),
-                        }
-                    })
-                }
-            }
+            })
         }
     }
 }
@@ -133,6 +113,16 @@ pub fn set_up(args: TokenStream, item: TokenStream) -> TokenStream {
     let is_unit_result = match is_unit_result(&input_fn.sig.output) {
         Ok(flag) => flag,
         Err(e) => return e.to_compile_error().into(),
+    };
+
+    let has_context_arg = match input_fn.sig.inputs.len() {
+        0 => false,
+        1 => true,
+        _ => {
+            return Error::new(input_fn.sig.span(), "Only Context arg permitted")
+                .to_compile_error()
+                .into();
+        }
     };
 
     let span = input_fn.span().unwrap();
@@ -166,7 +156,13 @@ pub fn set_up(args: TokenStream, item: TokenStream) -> TokenStream {
     let fn_name = &input_fn.sig.ident;
     let wrapper_name = Ident::new(&format!("__{}_set_up_wrapper", fn_name), fn_name.span());
 
-    let wrapper_fn = create_set_up_wrapper(fn_name, &wrapper_name, is_async, is_unit_result);
+    let wrapper_fn = create_set_up_wrapper(
+        fn_name,
+        &wrapper_name,
+        is_async,
+        has_context_arg,
+        is_unit_result,
+    );
 
     let expanded = quote! {
 

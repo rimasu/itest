@@ -20,6 +20,8 @@ async fn set_up(ctx: Context) -> Result<impl TearDown, Box<dyn std::error::Error
         .with_network("host");
 
     let container = image.start().await?;
+    ctx.monitor1("stdout", container.stdout(true));
+    ctx.monitor1("stderr", container.stderr(true));
 
-    Ok(ContainerTearDown::new(container))
+    Ok(ContainerTearDown::new(container, &ctx))
 }

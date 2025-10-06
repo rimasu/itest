@@ -16,5 +16,8 @@ async fn set_up(ctx: Context) -> Result<impl TearDown, Box<dyn std::error::Error
 
     let container = image.start().await?;
 
-    Ok(ContainerTearDown::new(container))
+    ctx.monitor1("stdout", container.stdout(true));
+    ctx.monitor1("stderr", container.stderr(true));
+
+    Ok(ContainerTearDown::new(container, &ctx))
 }

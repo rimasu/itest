@@ -3,11 +3,13 @@ use std::{
     fmt, fs,
     io::{self, Write},
     path::{Path, PathBuf},
+    pin::Pin,
     sync::Arc,
     time::Instant,
 };
 
 use dashmap::DashMap;
+use tokio::io::{AsyncBufRead, AsyncBufReadExt};
 
 #[derive(Clone)]
 pub struct Param {
@@ -105,6 +107,15 @@ impl Context {
     //         );
     //     }
     // }
+
+    pub fn monitor1(&self, name: &str, mut reader: Pin<Box<dyn AsyncBufRead + Send>>) {
+        let path = self.log_file_path(name);
+        let handle = tokio::spawn(async move {
+            let mut file = tokio::fs::File::create(path).await?;
+            tokio::io::copy(&mut reader, &mut file).await?;
+            Ok::<_, std::io::Error>(())
+        });
+    }
 
     /// Create a path suitable for logging the components output
     ///
