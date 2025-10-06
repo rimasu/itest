@@ -75,6 +75,7 @@ pub async fn run_set_ups(ctx: &mut GlobalContext) -> Result<Vec<(String, Box<dyn
     let dep_table = build_dep_table()?;
 
     let mut tear_downs = Vec::new();
+    let mut errs = Vec::new();
     let order = dry_run_tasks(&dep_table)?;
     let m = MultiProgress::new();
 
@@ -106,19 +107,40 @@ pub async fn run_set_ups(ctx: &mut GlobalContext) -> Result<Vec<(String, Box<dyn
             task.set_status(idx, Status::Running);
             spinners.get(&idx).unwrap().set_message("running");
             let r = run_set_up(context2, set_up).await;
-            spinners
-                .get(&idx)
-                .unwrap()
-                .finish_with_message(format!("ok"));
-            task.set_status(idx, Status::Finished);
-            if let Ok(Some(tear_down)) = r {
-                tear_downs.push((dep_table.name(idx).to_owned(), tear_down));
+
+            match r {
+                Ok(output) => {
+                    spinners
+                        .get(&idx)
+                        .unwrap()
+                        .finish_with_message(format!("ok"));
+                    task.set_status(idx, Status::Finished);
+                    if let Some(tear_down) = output {
+                        tear_downs.push((dep_table.name(idx).to_owned(), tear_down));
+                    }
+                }
+                Err(err) => {
+                    spinners
+                        .get(&idx)
+                        .unwrap()
+                        .finish_with_message(format!("failed"));
+                    task.set_status(idx, Status::Failed);
+                    errs.push((dep_table.name(idx), format!("{:?}", err)));
+                }
+            }
+
+            if !errs.is_empty() {
+                break
             }
         }
     }
 
     println!("\n");
     println!("Setup Complete");
+
+    for (name, err) in errs {
+        println!("{} failed\n\t{}", name, err);
+    }
 
     Ok(tear_downs)
 }
