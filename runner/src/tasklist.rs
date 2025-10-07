@@ -106,17 +106,17 @@ impl TaskList {
         }
     }
 
-    pub fn pop_ready(&mut self) -> Option<usize> {
-        self.ready.pop_front()
-    }
-
-    pub fn pop_all_ready(&mut self) -> Option<Vec<usize>> {
+    pub fn pop_ready(&mut self) -> Option<Vec<usize>> {
         // could be simpler.
         let mut ready = Vec::new();
         while let Some(idx) = self.ready.pop_front() {
             ready.push(idx)
         }
         if ready.is_empty() { None } else { Some(ready) }
+    }
+
+    pub fn all_finished(&self) -> bool {
+        self.tasks.iter().all(|t| t.status == Status::Finished)
     }
 }
 
@@ -127,23 +127,33 @@ mod test {
     #[test]
     fn tasks_with_no_deps_are_ready() {
         let mut tasks = TaskList::new(&[vec![], vec![0], vec![]]);
-        assert_eq!(Some(0), tasks.pop_ready());
-        assert_eq!(Some(2), tasks.pop_ready());
+        assert_eq!(Some(vec![0, 2]), tasks.pop_ready());
         assert_eq!(None, tasks.pop_ready());
     }
 
     #[test]
     fn tasks_become_ready_when_there_dependencies_are_finished() {
         let mut tasks = TaskList::new(&[vec![], vec![0], vec![]]);
-        assert_eq!(Some(0), tasks.pop_ready());
-        assert_eq!(Some(2), tasks.pop_ready());
+        assert_eq!(Some(vec![0, 2]), tasks.pop_ready());
         assert_eq!(None, tasks.pop_ready());
 
         tasks.set_status(0, Status::Running);
         assert_eq!(None, tasks.pop_ready());
 
         tasks.set_status(0, Status::Finished);
-        assert_eq!(Some(1), tasks.pop_ready());
+        assert_eq!(Some(vec![1]), tasks.pop_ready());
         assert_eq!(None, tasks.pop_ready());
+    }
+
+    #[test]
+    fn check_all_finished() {
+        let mut tasks = TaskList::new(&[vec![], vec![0], vec![]]);
+        assert_eq!(false, tasks.all_finished());
+
+        tasks.set_status(0, Status::Running);
+  
+        tasks.set_status(1, Status::Finished);
+        tasks.set_status(2, Status::Finished);
+        assert_eq!(false, tasks.all_finished());
     }
 }

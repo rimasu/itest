@@ -1,6 +1,5 @@
-use std::collections::hash_map::Entry::{Occupied, Vacant};
-use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
-use std::fmt::{self, Debug, Display, Write};
+use std::collections::BTreeMap;
+use std::fmt::{self, Debug, Display};
 
 use crate::tasklist::TaskList;
 
@@ -163,6 +162,14 @@ impl<D: Display> DepTable<D> {
 
     pub fn decl(&self, id: usize) -> &D {
         &self.decls[id].decl
+    }
+
+    pub fn names(&self) -> impl Iterator<Item = &str> {
+        self.decls.iter().map(|d| d.name.as_str())
+    }
+
+    pub fn max_name_len(&self) -> usize {
+        self.names().map(|n| n.len()).max().unwrap_or(0)
     }
 
     pub fn make_task_list(&self) -> TaskList {

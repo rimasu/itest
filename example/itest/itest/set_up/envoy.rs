@@ -23,5 +23,5 @@ async fn set_up(ctx: Context) -> Result<impl TearDown, Box<dyn std::error::Error
     ctx.monitor_async("stdout", container.stdout(true));
     ctx.monitor_async("stderr", container.stderr(true));
 
-    Ok(ContainerTearDown::new(container, &ctx))
+    Ok(ContainerTearDown::new(container))
 }

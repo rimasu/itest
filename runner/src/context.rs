@@ -1,15 +1,12 @@
 use std::{
-    collections::{BTreeMap, BTreeSet},
     fmt, fs,
-    io::{self, BufRead, Write},
     path::{Path, PathBuf},
     pin::Pin,
     sync::Arc,
-    time::Instant,
 };
 
 use dashmap::DashMap;
-use tokio::io::{AsyncBufRead, AsyncBufReadExt};
+use tokio::io::AsyncBufRead;
 
 #[derive(Clone)]
 pub struct Param {
@@ -84,30 +81,6 @@ impl Context {
         fs::create_dir_all(&log_dir).unwrap();
         log_dir
     }
-
-    // pub(crate) fn log_action_start(&self, action: &str, name: &str) {
-    //     print!(
-    //         "{} {:width$} ... ",
-    //         action,
-    //         name,
-    //         width = self.max_component_name_len
-    //     );
-    //     io::stdout().flush().unwrap();
-    // }
-
-    // pub(crate) fn log_action_end(&self, status: Outcome, start: Instant) {
-    //     if status == Outcome::Skipped {
-    //         println!("{}", status);
-    //     } else {
-    //         let elapsed = start.elapsed();
-    //         println!(
-    //             "{} ({:.02}s)",
-    //             status,
-    //             (elapsed.as_millis() as f64) / 1000.0
-    //         );
-    //     }
-    // }
-
 
     pub fn monitor_async(&self, name: &str, mut reader: Pin<Box<dyn AsyncBufRead + Send>>) {
         let path = self.log_file_path(name);

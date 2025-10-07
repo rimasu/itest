@@ -1,17 +1,11 @@
 use std::{
     fs::File,
-    io::{self, BufRead, BufReader, BufWriter, Read, Write},
-    path::{Path, PathBuf},
     process::{Child, Command, Stdio},
 };
 
 use async_trait::async_trait;
 
 use crate::{Context, TearDown};
-
-// use async_trait::async_trait;
-
-// use crate::{AsyncSetUp, Context, SetUpResult, TearDown};
 
 pub struct LocalServerSetUp {
     name: String,
@@ -72,24 +66,6 @@ pub struct LocalRunnerComponent {
 impl TearDown for LocalRunnerComponent {
     async fn tear_down(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         self.child.kill()?;
-
         Ok(())
     }
-}
-
-fn dump_to_file<R>(mut reader: &mut R, file_path: &Path) -> io::Result<()>
-where
-    R: BufRead,
-{
-    let file = File::create(file_path)?;
-    let mut writer = BufWriter::new(file);
-
-    let mut line = String::new();
-    while reader.read_line(&mut line)? > 0 {
-        writer.write_all(line.as_bytes())?;
-        line.clear();
-    }
-
-    writer.flush()?;
-    Ok(())
 }

@@ -5,7 +5,7 @@ mod postgres;
 mod redis;
 mod server;
 
-#[set_up(Example)]
-fn set_up() -> Result<(), Box<dyn std::error::Error>> {
+#[set_up(Example1)]
+fn set_up_example1() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
