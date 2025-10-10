@@ -23,17 +23,20 @@ impl Status {
     }
 }
 
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
+pub struct Task( pub (crate) usize);
+
 #[derive(Clone)]
-struct Task {
+struct TaskState {
     status: Status,
-    unblocks: Vec<usize>,
-    blocked_by: HashSet<usize>,
+    unblocks: Vec<Task>,
+    blocked_by: HashSet<Task>,
 }
 
 #[derive(Clone)]
 pub struct TaskList {
-    ready: VecDeque<usize>,
-    tasks: Vec<Task>,
+    ready: VecDeque<Task>,
+    tasks: Vec<TaskState>,
 }
 
 impl TaskList {
@@ -47,57 +50,57 @@ impl TaskList {
                 Status::Waiting
             };
 
-            tasks.push(Task {
+            tasks.push(TaskState {
                 status: Status::Ready,
                 unblocks: Vec::new(),
-                blocked_by: deps.iter().map(|t| *t).collect(),
+                blocked_by: deps.iter().map(|t| Task(*t)).collect(),
             });
 
             if status == Status::Ready {
-                ready.push_back(task_id)
+                ready.push_back(Task(task_id))
             }
         }
 
         for (task_id, deps) in deps.iter().enumerate() {
             for dep in deps {
-                tasks[*dep].unblocks.push(task_id);
+                tasks[*dep].unblocks.push(Task(task_id));
             }
         }
 
         Self { ready, tasks }
     }
 
-    pub fn set_status(&mut self, id: usize, next: Status) {
-        let current = self.tasks[id].status;
+    pub fn set_status(&mut self, task: Task, next: Status) {
+        let current = self.tasks[task.0].status;
         match (current, next) {
-            (Status::Ready, Status::Running) => self.start_task(id),
-            (Status::Running, Status::Finished) => self.finish_task(id),
-            (Status::Running, Status::Failed) => self.fail_task(id),
+            (Status::Ready, Status::Running) => self.start_task(task),
+            (Status::Running, Status::Finished) => self.finish_task(task),
+            (Status::Running, Status::Failed) => self.fail_task(task),
             _ => panic!(
-                "Invalid status change for task {} ({:?} -> {:?})",
-                id, current, next
+                "Invalid status change for {:?} ({:?} -> {:?})",
+                task, current, next
             ),
         }
     }
 
-    fn start_task(&mut self, id: usize) {
-        self.tasks[id].status = Status::Running;
+    fn start_task(&mut self, started: Task) {
+        self.tasks[started.0].status = Status::Running;
     }
 
-    fn finish_task(&mut self, finished_task_id: usize) {
-        while let Some(unblocked_id) = self.tasks[finished_task_id].unblocks.pop() {
-            let blocked = &mut self.tasks[unblocked_id];
-            assert!(blocked.blocked_by.remove(&finished_task_id));
+    fn finish_task(&mut self, finished: Task) {
+        while let Some(unblocked_id) = self.tasks[finished.0].unblocks.pop() {
+            let blocked = &mut self.tasks[unblocked_id.0];
+            assert!(blocked.blocked_by.remove(&finished));
             if blocked.blocked_by.is_empty() {
                 blocked.status = Status::Ready;
                 self.ready.push_back(unblocked_id);
             }
         }
-        self.tasks[finished_task_id].status = Status::Finished;
+        self.tasks[finished.0].status = Status::Finished;
     }
 
-    fn fail_task(&mut self, failed_task_id: usize) {
-        self.tasks[failed_task_id].status = Status::Failed;
+    fn fail_task(&mut self, failed: Task) {
+        self.tasks[failed.0].status = Status::Failed;
         self.ready.clear();
         for task in &mut self.tasks {
             if task.status.not_started() {
@@ -106,7 +109,7 @@ impl TaskList {
         }
     }
 
-    pub fn pop_ready(&mut self) -> Option<Vec<usize>> {
+    pub fn pop_ready(&mut self) -> Option<Vec<Task>> {
         // could be simpler.
         let mut ready = Vec::new();
         while let Some(idx) = self.ready.pop_front() {
@@ -127,21 +130,21 @@ mod test {
     #[test]
     fn tasks_with_no_deps_are_ready() {
         let mut tasks = TaskList::new(&[vec![], vec![0], vec![]]);
-        assert_eq!(Some(vec![0, 2]), tasks.pop_ready());
+        assert_eq!(Some(vec![Task(0), Task(2)]), tasks.pop_ready());
         assert_eq!(None, tasks.pop_ready());
     }
 
     #[test]
     fn tasks_become_ready_when_there_dependencies_are_finished() {
         let mut tasks = TaskList::new(&[vec![], vec![0], vec![]]);
-        assert_eq!(Some(vec![0, 2]), tasks.pop_ready());
+        assert_eq!(Some(vec![Task(0), Task(2)]), tasks.pop_ready());
         assert_eq!(None, tasks.pop_ready());
 
-        tasks.set_status(0, Status::Running);
+        tasks.set_status(Task(0), Status::Running);
         assert_eq!(None, tasks.pop_ready());
 
-        tasks.set_status(0, Status::Finished);
-        assert_eq!(Some(vec![1]), tasks.pop_ready());
+        tasks.set_status(Task(0), Status::Finished);
+        assert_eq!(Some(vec![Task(1)]), tasks.pop_ready());
         assert_eq!(None, tasks.pop_ready());
     }
 
@@ -150,10 +153,12 @@ mod test {
         let mut tasks = TaskList::new(&[vec![], vec![0], vec![]]);
         assert_eq!(false, tasks.all_finished());
 
-        tasks.set_status(0, Status::Running);
-  
-        tasks.set_status(1, Status::Finished);
-        tasks.set_status(2, Status::Finished);
-        assert_eq!(false, tasks.all_finished());
+        tasks.set_status(Task(0), Status::Running);
+        tasks.set_status(Task(0), Status::Finished);
+        tasks.set_status(Task(1), Status::Running);
+        tasks.set_status(Task(1), Status::Finished);
+        tasks.set_status(Task(2), Status::Running);
+        tasks.set_status(Task(2), Status::Finished);
+        assert_eq!(true, tasks.all_finished());
     }
 }

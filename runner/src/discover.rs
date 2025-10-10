@@ -3,11 +3,11 @@ use std::fmt;
 use crate::{
     RegisteredSetUp, SetUpFn,
     deptable::{Builder, DepTable},
-    tasklist::{Status, TaskList},
+    tasklist::{Status, Task, TaskList},
 };
 
 pub struct SetUps {
-    display_order: Vec<usize>,
+    display_order: Vec<Task>,
     pub dep_table: DepTable<SetUpDecl>,
 }
 
@@ -20,11 +20,13 @@ impl SetUps {
         self.dep_table.make_task_list()
     }
 
-    pub fn tasks(&self) -> impl Iterator<Item = (usize, &str)> {
+    pub fn tasks(&self) -> impl Iterator<Item = (Task, &str)> {
         self.display_order
             .iter()
-            .map(|idx| (*idx, self.dep_table.name(*idx)))
+            .map(|task| (*task, self.dep_table.name(task.0)))
     }
+    
+    
 }
 
 pub struct SetUpDecl {
@@ -63,13 +65,13 @@ fn build_dep_table() -> Result<DepTable<SetUpDecl>, ()> {
     }
 }
 
-fn dry_run_tasks(dep_table: &DepTable<SetUpDecl>) -> Result<Vec<usize>, ()> {
+fn dry_run_tasks(dep_table: &DepTable<SetUpDecl>) -> Result<Vec<Task>, ()> {
     let mut task = dep_table.make_task_list();
     let mut dry_run_order = Vec::new();
 
     while let Some(mut ready) = task.pop_ready() {
         // sort all the tasks in the ready list by their name
-        ready.sort_by(|a, b| dep_table.name(*a).cmp(dep_table.name(*b)));
+        ready.sort_by(|a, b| dep_table.name(a.0).cmp(dep_table.name(b.0)));
         dry_run_order.extend_from_slice(&ready);
 
         // mark them all as complete

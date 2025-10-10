@@ -1,6 +1,10 @@
 use std::collections::HashMap;
 
-use crate::{GlobalContext, TearDown, discover::SetUps, tasklist::Status};
+use crate::{
+    GlobalContext, TearDown,
+    discover::SetUps,
+    tasklist::{Status, Task},
+};
 
 use indicatif::{MultiProgress, MultiProgressAlignment, ProgressBar, ProgressStyle};
 
@@ -11,7 +15,7 @@ pub struct SetUpOutcome {
 
 struct StatusTable {
     m: MultiProgress,
-    spinners: HashMap<usize, ProgressBar>,
+    spinners: HashMap<Task, ProgressBar>,
 }
 
 impl StatusTable {
@@ -36,24 +40,24 @@ impl StatusTable {
         StatusTable { m, spinners }
     }
 
-    pub fn set_status(&mut self, idx: usize, status: Status) {
+    pub fn set_status(&mut self, task: Task, status: Status) {
         match status {
             Status::Waiting => todo!(),
             Status::Ready => todo!(),
-            Status::Running => self.spinners.get(&idx).unwrap().set_message("running"),
+            Status::Running => self.spinners.get(&task).unwrap().set_message("running"),
             Status::Finished => self
                 .spinners
-                .get(&idx)
+                .get(&task)
                 .unwrap()
                 .finish_with_message("finished"),
             Status::Skipped => self
                 .spinners
-                .get(&idx)
+                .get(&task)
                 .unwrap()
                 .finish_with_message("skipped"),
             Status::Failed => self
                 .spinners
-                .get(&idx)
+                .get(&task)
                 .unwrap()
                 .finish_with_message("skipped"),
         }
@@ -70,26 +74,26 @@ pub async fn run_set_ups(set_ups: SetUps, ctx: &mut GlobalContext) -> SetUpOutco
 
     let mut tasks = set_ups.make_task_list();
     while let Some(ready) = tasks.pop_ready() {
-        for idx in ready {
-            let context2 = ctx.create_component_context(set_ups.dep_table.name(idx));
-            let set_up = set_ups.dep_table.decl(idx).set_up_fn;
-            tasks.set_status(idx, Status::Running);
-            status_table.set_status(idx, Status::Running);
+        for task in ready {
+            let context2 = ctx.create_component_context(set_ups.dep_table.name(task.0));
+            let set_up = set_ups.dep_table.decl(task.0).set_up_fn;
+            tasks.set_status(task, Status::Running);
+            status_table.set_status(task, Status::Running);
 
             let r = (*set_up)(context2).await;
 
             match r {
                 Ok(output) => {
-                    status_table.set_status(idx, Status::Finished);
-                    tasks.set_status(idx, Status::Finished);
+                    status_table.set_status(task, Status::Finished);
+                    tasks.set_status(task, Status::Finished);
                     if let Some(tear_down) = output {
-                        tear_downs.push((set_ups.dep_table.name(idx).to_owned(), tear_down));
+                        tear_downs.push((set_ups.dep_table.name(task.0).to_owned(), tear_down));
                     }
                 }
                 Err(err) => {
-                    status_table.set_status(idx, Status::Failed);
-                    tasks.set_status(idx, Status::Failed);
-                    errs.push((set_ups.dep_table.name(idx), format!("{:?}", err)));
+                    status_table.set_status(task, Status::Failed);
+                    tasks.set_status(task, Status::Failed);
+                    errs.push((set_ups.dep_table.name(task.0), format!("{:?}", err)));
                 }
             }
 
