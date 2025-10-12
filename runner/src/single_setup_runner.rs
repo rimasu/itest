@@ -1,8 +1,12 @@
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    time::{Instant},
+};
 
 use crate::{
     GlobalContext, TearDown,
     discover::SetUps,
+    progress::ProgressListener,
     tasklist::{Status, Task},
 };
 
@@ -64,13 +68,18 @@ impl StatusTable {
     }
 }
 
-pub async fn run_set_ups(set_ups: SetUps, ctx: &mut GlobalContext) -> SetUpOutcome {
+pub async fn run_set_ups(
+    set_ups: SetUps,
+    ctx: &mut GlobalContext,
+    listener: ProgressListener,
+) -> SetUpOutcome {
     let mut tear_downs = Vec::new();
     let mut errs = Vec::new();
 
-    let mut status_table = StatusTable::new(&set_ups);
+    // let mut status_table = StatusTable::new(&set_ups);
 
-    println!("Running setups\n");
+    let start = Instant::now();
+    listener.set_ups_started().await;
 
     let mut tasks = set_ups.make_task_list();
     while let Some(ready) = tasks.pop_ready() {
@@ -78,20 +87,29 @@ pub async fn run_set_ups(set_ups: SetUps, ctx: &mut GlobalContext) -> SetUpOutco
             let context2 = ctx.create_component_context(set_ups.dep_table.name(task.0));
             let set_up = set_ups.dep_table.decl(task.0).set_up_fn;
             tasks.set_status(task, Status::Running);
-            status_table.set_status(task, Status::Running);
 
+            listener.set_up_started(task, "").await;
+
+            // status_table.set_status(task, Status::Running);
+
+            let set_up_start = Instant::now();
             let r = (*set_up)(context2).await;
+            let set_up_duration = set_up_start.elapsed();
 
             match r {
                 Ok(output) => {
-                    status_table.set_status(task, Status::Finished);
+                    // status_table.set_status(task, Status::Finished);
+                    listener.set_up_finished(task, "", set_up_duration).await;
                     tasks.set_status(task, Status::Finished);
                     if let Some(tear_down) = output {
                         tear_downs.push((set_ups.dep_table.name(task.0).to_owned(), tear_down));
                     }
                 }
                 Err(err) => {
-                    status_table.set_status(task, Status::Failed);
+                    // status_table.set_status(task, Status::Failed);
+                    listener
+                        .set_up_failed(task, "", set_up_duration, &format!("{:?}", err))
+                        .await;
                     tasks.set_status(task, Status::Failed);
                     errs.push((set_ups.dep_table.name(task.0), format!("{:?}", err)));
                 }
@@ -103,8 +121,9 @@ pub async fn run_set_ups(set_ups: SetUps, ctx: &mut GlobalContext) -> SetUpOutco
         }
     }
 
-    println!("\n");
-    println!("Setup Complete");
+    let success = tasks.all_finished();
+    let set_up_duration = start.elapsed();
+    listener.set_ups_finished(success, set_up_duration).await;
 
     for (name, err) in errs {
         println!("{} failed\n\t{}", name, err);

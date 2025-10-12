@@ -15,11 +15,14 @@ mod discover;
 mod single_setup_runner;
 mod tasklist;
 
+mod progress;
+
 pub use context::{Context, GlobalContext, Param};
 
 use libtest_mimic::{Arguments, Conclusion, Trial};
 
 use crate::discover::discover_setups;
+use crate::progress::launch_event_monitor;
 use crate::single_setup_runner::run_set_ups;
 
 #[derive(Eq, PartialEq, Clone, Copy)]
@@ -118,9 +121,11 @@ impl ITest {
     }
 
     async fn run_async(mut self) {
+        let (_, listener) = launch_event_monitor();
+
         let set_ups = discover_setups().unwrap();
 
-        let set_up_outcome = run_set_ups(set_ups, &mut self.context).await;
+        let set_up_outcome = run_set_ups(set_ups, &mut self.context, listener).await;
 
         let conculsion = if set_up_outcome.success {
             Some(run_tests())
