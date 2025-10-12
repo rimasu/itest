@@ -1,6 +1,7 @@
 #![feature(exit_status_error)]
 
 use std::pin::Pin;
+use std::thread::JoinHandle;
 use std::{fmt, path::PathBuf, process::Command};
 
 use async_trait::async_trait;
@@ -22,7 +23,7 @@ pub use context::{Context, GlobalContext, Param};
 use libtest_mimic::{Arguments, Conclusion, Trial};
 
 use crate::discover::discover_setups;
-use crate::progress::launch_event_monitor;
+use crate::progress::{ProgressListener, launch_event_monitor};
 use crate::single_setup_runner::run_set_ups;
 
 #[derive(Eq, PartialEq, Clone, Copy)]
@@ -83,14 +84,12 @@ fn run_tests() -> Conclusion {
 }
 
 pub struct ITest {
-    context: GlobalContext,
+
 }
 
 impl ITest {
     pub fn new() -> Self {
-        let workspace_root_dir = find_workspace_root_dir();
-        let context = GlobalContext::new(&workspace_root_dir);
-        Self { context }
+        Self {}
     }
 }
 
@@ -110,22 +109,20 @@ fn find_workspace_root_dir() -> PathBuf {
 }
 
 impl ITest {
-    pub fn set(mut self, key: &str, value: &str) -> Self {
-        self.context.set_global_param(key, value);
-        self
-    }
-
     pub fn run(self) {
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(self.run_async())
     }
 
-    async fn run_async(mut self) {
+    async fn run_async(self) {
+        let workspace_root_dir = find_workspace_root_dir();
+
         let (_, listener) = launch_event_monitor();
+        let mut context = GlobalContext::new(&workspace_root_dir);
 
         let set_ups = discover_setups().unwrap();
 
-        let set_up_outcome = run_set_ups(set_ups, &mut self.context, listener).await;
+        let set_up_outcome = run_set_ups(set_ups, &mut context, listener).await;
 
         let conculsion = if set_up_outcome.success {
             Some(run_tests())
