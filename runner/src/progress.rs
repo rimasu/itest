@@ -1,45 +1,45 @@
 use crate::tasklist::Task;
-use std::{collections::HashMap, time::Duration};
+use std::{collections::HashMap, fmt, time::Duration};
 use tokio::{sync::mpsc, task::JoinHandle};
 
 #[derive(Debug, Clone, Eq, PartialEq)]
+pub enum Phase {
+    SetUp,
+    TearDown,
+}
+
+impl fmt::Display for Phase {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let s = match self {
+            Phase::SetUp => "set up",
+            Phase::TearDown => "tear down",
+        };
+        fmt::Display::fmt(s, f)
+    }
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+enum TaskStatus {
+    Pending,
+    Running,
+    Failed { duration: Duration, err_msg: String },
+    Done { duration: Duration },
+    Skipped,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
 enum ProgressEvent {
-    SetUpsStarted,
-    SetUpStarted {
-        task: Task,
+    PhaseStarted {
+        phase: Phase,
     },
-    SetUpReady {
-        task: Task,
-    },
-    SetUpFinished {
-        task: Task,
+    PhaseFinished {
+        phase: Phase,
         duration: Duration,
     },
-    SetUpFailed {
+    UpdateTask {
+        phase: Phase,
         task: Task,
-        duration: Duration,
-        message: String,
-    },
-    SetUpsFinished {
-        success: bool,
-        duration: Duration,
-    },
-    TearDownsStarted,
-    TearDownStarted {
-        task: Task,
-    },
-    TearDownFinished {
-        task: Task,
-        duration: Duration,
-    },
-    TearDownFailed {
-        task: Task,
-        duration: Duration,
-        message: String,
-    },
-    TearDownsFinished {
-        success: bool,
-        duration: Duration,
+        status: TaskStatus,
     },
 }
 
@@ -49,66 +49,62 @@ pub struct ProgressListener {
 }
 
 impl ProgressListener {
-    pub async fn set_ups_started(&self) {
-        self.publish(ProgressEvent::SetUpsStarted).await
+    pub async fn phase_started(&self, phase: Phase) {
+        self.publish(ProgressEvent::PhaseStarted { phase }).await;
     }
 
-    pub async fn set_up_ready(&self, task: Task) {
-        self.publish(ProgressEvent::SetUpReady { task }).await
+    pub async fn phase_finished(&self, phase: Phase, duration: Duration) {
+        self.publish(ProgressEvent::PhaseFinished { phase, duration })
+            .await;
     }
 
-    pub async fn set_up_started(&self, task: Task) {
-        self.publish(ProgressEvent::SetUpStarted { task }).await
-    }
-
-    pub async fn set_up_finished(&self, task: Task, duration: Duration) {
-        self.publish(ProgressEvent::SetUpFinished { task, duration })
-            .await
-    }
-
-    pub async fn set_up_failed(&self, task: Task, duration: Duration, message: &str) {
-        self.publish(ProgressEvent::SetUpFailed {
+    pub async fn task_ready(&self, phase: Phase, task: Task) {
+        self.publish(ProgressEvent::UpdateTask {
+            phase,
             task,
-            duration,
-            message: message.to_owned(),
+            status: TaskStatus::Pending,
         })
         .await
     }
 
-    pub async fn set_ups_finished(&self, success: bool, duration: Duration) {
-        self.publish(ProgressEvent::SetUpsFinished { success, duration })
-            .await
-    }
-
-    pub async fn tear_downs_started(&self) {
-        self.publish(ProgressEvent::TearDownsStarted).await
-    }
-
-    pub async fn tear_down_started(&self, task: Task) {
-        self.publish(ProgressEvent::TearDownStarted { task }).await
-    }
-
-    pub async fn tear_down_finished(&self, task: Task, duration: Duration) {
-        self.publish(ProgressEvent::TearDownFinished { task, duration })
-            .await
-    }
-
-    pub async fn tear_down_failed(&self, task: Task, duration: Duration, message: &str) {
-        self.publish(ProgressEvent::TearDownFailed {
+    pub async fn task_running(&self, phase: Phase, task: Task) {
+        self.publish(ProgressEvent::UpdateTask {
+            phase,
             task,
-            duration,
-            message: message.to_owned(),
+            status: TaskStatus::Running,
         })
         .await
     }
 
-    pub async fn tear_downs_finished(&self, success: bool, duration: Duration) {
-        self.publish(ProgressEvent::TearDownsFinished { success, duration })
-            .await
+    pub async fn task_done(&self, phase: Phase, task: Task, duration: Duration) {
+        self.publish(ProgressEvent::UpdateTask {
+            phase,
+            task,
+            status: TaskStatus::Done { duration },
+        })
+        .await
+    }
+
+    pub async fn task_failed(&self, phase: Phase, task: Task, duration: Duration, err_msg: String) {
+        self.publish(ProgressEvent::UpdateTask {
+            phase,
+            task,
+            status: TaskStatus::Failed { duration, err_msg },
+        })
+        .await
+    }
+
+    pub async fn task_skipped(&self, phase: Phase, task: Task) {
+        self.publish(ProgressEvent::UpdateTask {
+            phase,
+            task,
+            status: TaskStatus::Skipped,
+        })
+        .await
     }
 
     async fn publish(&self, ev: ProgressEvent) {
-        if let Some(err)  =self.tx.send(ev).await.err() {
+        if let Some(err) = self.tx.send(ev).await.err() {
             println!("Failed to publish progress event {:?}", err.0);
         }
     }
@@ -150,54 +146,45 @@ impl Monitor {
 
     fn log_event(&self, event: ProgressEvent) {
         match event {
-            ProgressEvent::SetUpsStarted => {
-                println!("set up started");
+            ProgressEvent::PhaseStarted { phase } => {
+                println!("{phase:width$}  started", width = self.max_name_len + 1);
             }
-            ProgressEvent::SetUpStarted { task } => {
-                let name = self.task_name(task);
-                println!("  {name} started");
+            ProgressEvent::PhaseFinished { phase, duration } => {
+                println!(
+                    "{phase:width$}  done     {:8.02}s",
+                    duration.as_millis() as f64 / 1000.0,
+                    width = self.max_name_len + 1
+                );
             }
-            ProgressEvent::SetUpReady { task } => {
-                let name = self.task_name(task);
-                println!("  {name} ready");
-            }
-            ProgressEvent::SetUpFinished { task, duration } => {
-                let name = self.task_name(task);
-                println!("  {name} finished in {:?}", duration);
-            }
-            ProgressEvent::SetUpFailed {
+            ProgressEvent::UpdateTask {
+                phase: _,
                 task,
-                duration,
-                message,
+                status,
             } => {
                 let name = self.task_name(task);
-                println!("  {name} failed in {:?} {}", duration, message);
-            }
-            ProgressEvent::SetUpsFinished { success, duration } => {
-                println!("set up finished in {:?} (success={})", duration, success);
-            }
-
-            ProgressEvent::TearDownsStarted => {
-                println!("tear down started");
-            }
-            ProgressEvent::TearDownStarted { task } => {
-                let name = self.task_name(task);
-                println!("tear down {name} started");
-            }
-            ProgressEvent::TearDownFinished { task, duration } => {
-                let name = self.task_name(task);
-                println!("tear down {name} finished in {:?}", duration);
-            }
-            ProgressEvent::TearDownFailed {
-                task,
-                duration,
-                message,
-            } => {
-                let name = self.task_name(task);
-                println!("tear down {name} failed in {:?} {}", duration, message);
-            }
-            ProgressEvent::TearDownsFinished { success, duration } => {
-                println!("tear down finished in {:?} (success={})", duration, success);
+                match status {
+                    TaskStatus::Pending => {
+                        println!(" {name}  pending");
+                    }
+                    TaskStatus::Running => {
+                        println!(" {name}  running  ");
+                    }
+                    TaskStatus::Failed { duration, err_msg } => {
+                        println!(
+                            " {name}  failed   {:8.02}s:\n\t{err_msg}",
+                            duration.as_millis() as f64 / 1000.0
+                        );
+                    }
+                    TaskStatus::Done { duration } => {
+                        println!(
+                            " {name}  done     {:8.02}s",
+                            duration.as_millis() as f64 / 1000.0
+                        );
+                    }
+                    TaskStatus::Skipped => {
+                        println!(" {name}  skipped");
+                    }
+                }
             }
         }
     }

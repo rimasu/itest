@@ -1,7 +1,6 @@
 #![feature(exit_status_error)]
 
 use std::pin::Pin;
-use std::thread::JoinHandle;
 use std::{fmt, path::PathBuf, process::Command};
 
 use async_trait::async_trait;
@@ -13,9 +12,10 @@ pub mod components;
 mod context;
 mod deptable;
 mod discover;
-mod single_setup_runner;
+mod set_up_runner;
 mod tasklist;
 
+mod set_up_workers;
 mod progress;
 
 pub use context::{Context, GlobalContext, Param};
@@ -24,7 +24,10 @@ use libtest_mimic::{Arguments, Conclusion, Trial};
 
 use crate::discover::discover_setups;
 use crate::progress::launch_progress_monitor;
-use crate::single_setup_runner::run_set_ups;
+use crate::set_up_runner::run_set_ups;
+
+
+
 
 #[derive(Eq, PartialEq, Clone, Copy)]
 pub enum Outcome {
