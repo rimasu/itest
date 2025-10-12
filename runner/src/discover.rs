@@ -12,10 +12,6 @@ pub struct SetUps {
 }
 
 impl SetUps {
-    pub fn max_name_len(&self) -> usize {
-        self.dep_table.max_name_len()
-    }
-
     pub fn make_task_list(&self) -> TaskList {
         self.dep_table.make_task_list()
     }
@@ -25,8 +21,6 @@ impl SetUps {
             .iter()
             .map(|task| (*task, self.dep_table.name(task.0)))
     }
-    
-    
 }
 
 pub struct SetUpDecl {

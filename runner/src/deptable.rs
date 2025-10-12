@@ -164,14 +164,6 @@ impl<D: Display> DepTable<D> {
         &self.decls[id].decl
     }
 
-    pub fn names(&self) -> impl Iterator<Item = &str> {
-        self.decls.iter().map(|d| d.name.as_str())
-    }
-
-    pub fn max_name_len(&self) -> usize {
-        self.names().map(|n| n.len()).max().unwrap_or(0)
-    }
-
     pub fn make_task_list(&self) -> TaskList {
         let mut deps = Vec::with_capacity(self.usages.len());
         for _ in &self.usages {

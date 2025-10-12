@@ -23,7 +23,7 @@ pub use context::{Context, GlobalContext, Param};
 use libtest_mimic::{Arguments, Conclusion, Trial};
 
 use crate::discover::discover_setups;
-use crate::progress::{ProgressListener, launch_event_monitor};
+use crate::progress::{ProgressListener, launch_progress_monitor};
 use crate::single_setup_runner::run_set_ups;
 
 #[derive(Eq, PartialEq, Clone, Copy)]
@@ -83,9 +83,7 @@ fn run_tests() -> Conclusion {
     libtest_mimic::run(&args, tests)
 }
 
-pub struct ITest {
-
-}
+pub struct ITest {}
 
 impl ITest {
     pub fn new() -> Self {
@@ -117,10 +115,11 @@ impl ITest {
     async fn run_async(self) {
         let workspace_root_dir = find_workspace_root_dir();
 
-        let (_, listener) = launch_event_monitor();
-        let mut context = GlobalContext::new(&workspace_root_dir);
-
         let set_ups = discover_setups().unwrap();
+        let task_names = set_ups.tasks().map(|(t, n)| (t, n.to_string())).collect();
+
+        let (_, listener) = launch_progress_monitor(task_names);
+        let mut context = GlobalContext::new(&workspace_root_dir);
 
         let set_up_outcome = run_set_ups(set_ups, &mut context, listener).await;
 

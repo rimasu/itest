@@ -1,26 +1,22 @@
-use std::time::Duration;
-use tokio::{sync::mpsc, task::JoinHandle};
 use crate::tasklist::Task;
+use std::{collections::HashMap, time::Duration};
+use tokio::{sync::mpsc, task::JoinHandle};
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 enum ProgressEvent {
     SetUpsStarted,
     SetUpStarted {
         task: Task,
-        name: String,
-    },  
+    },
     SetUpReady {
         task: Task,
-        name: String,
     },
     SetUpFinished {
         task: Task,
-        name: String,
         duration: Duration,
     },
     SetUpFailed {
         task: Task,
-        name: String,
         duration: Duration,
         message: String,
     },
@@ -31,16 +27,13 @@ enum ProgressEvent {
     TearDownsStarted,
     TearDownStarted {
         task: Task,
-        name: String,
     },
     TearDownFinished {
         task: Task,
-        name: String,
         duration: Duration,
     },
     TearDownFailed {
         task: Task,
-        name: String,
         duration: Duration,
         message: String,
     },
@@ -60,36 +53,22 @@ impl ProgressListener {
         self.publish(ProgressEvent::SetUpsStarted).await
     }
 
-
-    pub async fn set_up_ready(&self, task: Task, name: &str) {
-        self.publish(ProgressEvent::SetUpReady {
-            task,
-            name: name.to_owned(),
-        })
-        .await
+    pub async fn set_up_ready(&self, task: Task) {
+        self.publish(ProgressEvent::SetUpReady { task }).await
     }
 
-    pub async fn set_up_started(&self, task: Task, name: &str) {
-        self.publish(ProgressEvent::SetUpStarted {
-            task,
-            name: name.to_owned(),
-        })
-        .await
+    pub async fn set_up_started(&self, task: Task) {
+        self.publish(ProgressEvent::SetUpStarted { task }).await
     }
 
-    pub async fn set_up_finished(&self, task: Task, name: &str, duration: Duration) {
-        self.publish(ProgressEvent::SetUpFinished {
-            task,
-            name: name.to_owned(),
-            duration,
-        })
-        .await
+    pub async fn set_up_finished(&self, task: Task, duration: Duration) {
+        self.publish(ProgressEvent::SetUpFinished { task, duration })
+            .await
     }
 
-    pub async fn set_up_failed(&self, task: Task, name: &str, duration: Duration, message: &str) {
+    pub async fn set_up_failed(&self, task: Task, duration: Duration, message: &str) {
         self.publish(ProgressEvent::SetUpFailed {
             task,
-            name: name.to_owned(),
             duration,
             message: message.to_owned(),
         })
@@ -105,33 +84,18 @@ impl ProgressListener {
         self.publish(ProgressEvent::TearDownsStarted).await
     }
 
-    pub async fn tear_down_started(&self, task: Task, name: &str) {
-        self.publish(ProgressEvent::TearDownStarted {
-            task,
-            name: name.to_owned(),
-        })
-        .await
+    pub async fn tear_down_started(&self, task: Task) {
+        self.publish(ProgressEvent::TearDownStarted { task }).await
     }
 
-    pub async fn tear_down_finished(&self, task: Task, name: &str, duration: Duration) {
-        self.publish(ProgressEvent::TearDownFinished {
-            task,
-            name: name.to_owned(),
-            duration,
-        })
-        .await
+    pub async fn tear_down_finished(&self, task: Task, duration: Duration) {
+        self.publish(ProgressEvent::TearDownFinished { task, duration })
+            .await
     }
 
-    pub async fn tear_down_failed(
-        &self,
-        task: Task,
-        name: &str,
-        duration: Duration,
-        message: &str,
-    ) {
+    pub async fn tear_down_failed(&self, task: Task, duration: Duration, message: &str) {
         self.publish(ProgressEvent::TearDownFailed {
             task,
-            name: name.to_owned(),
             duration,
             message: message.to_owned(),
         })
@@ -148,69 +112,91 @@ impl ProgressListener {
     }
 }
 
-pub fn launch_event_monitor() -> (JoinHandle<()>, ProgressListener) {
+pub fn launch_progress_monitor(
+    task_names: HashMap<Task, String>,
+) -> (JoinHandle<()>, ProgressListener) {
+    let max_name_len = task_names.values().map(|n| n.len()).max().unwrap_or(0);
+    let monitor = Monitor {
+        task_names,
+        max_name_len,
+    };
+
     let (tx, mut rx) = mpsc::channel(100);
     let handle = tokio::spawn(async move {
         while let Some(ev) = rx.recv().await {
-            log_event(ev);
+            monitor.log_event(ev);
         }
     });
     (handle, ProgressListener { tx })
 }
 
-fn log_event(event: ProgressEvent) {
-    match event {
-        ProgressEvent::SetUpsStarted => {
-            println!("set up started");
-        }
-        ProgressEvent::SetUpStarted { task, name } => {
-            println!("set up {} started", name);
-        }
-        ProgressEvent::SetUpReady { task, name } => {
-            println!("set up {} ready", name);
-        }
-        ProgressEvent::SetUpFinished {
-            task: _,
-            name,
-            duration,
-        } => {
-            println!("set up {} finished in {:?}", name, duration);
-        }
-        ProgressEvent::SetUpFailed {
-            task: _,
-            name,
-            duration,
-            message,
-        } => {
-            println!("set up {} failed in {:?} {}", name, duration, message);
-        }
-        ProgressEvent::SetUpsFinished { success, duration } => {
-            println!("set up finished in {:?} (success={})", duration, success);
-        }
+struct Monitor {
+    task_names: HashMap<Task, String>,
+    max_name_len: usize,
+}
 
-        ProgressEvent::TearDownsStarted => {
-            println!("tear down started");
-        }
-        ProgressEvent::TearDownStarted { task, name } => {
-            println!("tear down {} started", name);
-        }
-        ProgressEvent::TearDownFinished {
-            task,
-            name,
-            duration,
-        } => {
-            println!("tear down {} finished in {:?}", name, duration);
-        }
-        ProgressEvent::TearDownFailed {
-            task,
-            name,
-            duration,
-            message,
-        } => {
-            println!("tear down {} failed in {:?} {}", name, duration, message);
-        }
-        ProgressEvent::TearDownsFinished { success, duration } => {
-            println!("tear down finished in {:?} (success={})", duration, success);
+impl Monitor {
+    fn task_name(&self, task: Task) -> String {
+        let raw = self
+            .task_names
+            .get(&task)
+            .map(|n| n.as_str())
+            .unwrap_or("?");
+
+        format!("{:width$}", raw, width = self.max_name_len)
+    }
+
+    fn log_event(&self, event: ProgressEvent) {
+        match event {
+            ProgressEvent::SetUpsStarted => {
+                println!("set up started");
+            }
+            ProgressEvent::SetUpStarted { task } => {
+                let name = self.task_name(task);
+                println!("  {name} started");
+            }
+            ProgressEvent::SetUpReady { task } => {
+                let name = self.task_name(task);
+                println!("  {name} ready");
+            }
+            ProgressEvent::SetUpFinished { task, duration } => {
+                let name = self.task_name(task);
+                println!("  {name} finished in {:?}", duration);
+            }
+            ProgressEvent::SetUpFailed {
+                task,
+                duration,
+                message,
+            } => {
+                let name = self.task_name(task);
+                println!("  {name} failed in {:?} {}", duration, message);
+            }
+            ProgressEvent::SetUpsFinished { success, duration } => {
+                println!("set up finished in {:?} (success={})", duration, success);
+            }
+
+            ProgressEvent::TearDownsStarted => {
+                println!("tear down started");
+            }
+            ProgressEvent::TearDownStarted { task } => {
+                let name = self.task_name(task);
+                println!("tear down {name} started");
+            }
+            ProgressEvent::TearDownFinished { task, duration } => {
+                let name = self.task_name(task);
+                println!("tear down {name} finished in {:?}", duration);
+            }
+            ProgressEvent::TearDownFailed {
+                task,
+                duration,
+                message,
+            } => {
+                let name = self.task_name(task);
+                println!("tear down {name} failed in {:?} {}", duration, message);
+            }
+            ProgressEvent::TearDownsFinished { success, duration } => {
+                println!("tear down finished in {:?} (success={})", duration, success);
+            }
         }
     }
 }
