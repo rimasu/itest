@@ -23,7 +23,7 @@ pub use context::{Context, GlobalContext, Param};
 use libtest_mimic::{Arguments, Conclusion, Trial};
 
 use crate::discover::discover_setups;
-use crate::progress::{ProgressListener, launch_progress_monitor};
+use crate::progress::launch_progress_monitor;
 use crate::single_setup_runner::run_set_ups;
 
 #[derive(Eq, PartialEq, Clone, Copy)]
@@ -43,8 +43,20 @@ impl fmt::Display for Outcome {
     }
 }
 
-pub type SetFnOutput =
-    Pin<Box<dyn Future<Output = Result<Option<Box<dyn TearDown>>, Box<dyn std::error::Error>>>>>;
+#[derive(Debug)]
+pub enum SetUpError {
+    Generic(String),
+}
+
+impl From<Box<dyn std::error::Error>> for SetUpError {
+    fn from(value: Box<dyn std::error::Error>) -> Self {
+        SetUpError::Generic(format!("{}", value))
+    }
+}
+
+pub type SetUpResult = Result<Option<Box<dyn TearDown>>, SetUpError>;
+
+pub type SetFnOutput = Pin<Box<dyn Future<Output = SetUpResult> + Send +'static>>;
 
 pub type SetUpFn = fn(Context) -> SetFnOutput;
 
@@ -65,7 +77,7 @@ pub struct RegisteredITest {
 inventory::collect!(RegisteredITest);
 
 #[async_trait]
-pub trait TearDown {
+pub trait TearDown: Send {
     async fn tear_down(&mut self) -> Result<(), Box<dyn std::error::Error>>;
 }
 
@@ -131,7 +143,7 @@ impl ITest {
 
         let mut tear_down_result = Vec::new();
         for (name, mut tear_down) in set_up_outcome.tear_downs.into_iter().rev() {
-            println!("tear down {} ", name);
+            println!("tear down {} ", name.0);
             let result = (*tear_down).tear_down().await;
             tear_down_result.push(result);
         }

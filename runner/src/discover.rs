@@ -70,12 +70,11 @@ fn dry_run_tasks(dep_table: &DepTable<SetUpDecl>) -> Result<Vec<Task>, ()> {
 
         // mark them all as complete
         for idx in ready {
-            task.set_status(idx, Status::Running);
-            task.set_status(idx, Status::Finished);
+            task.set_status(idx, Status::Success);
         }
     }
 
-    if task.all_finished() {
+    if task.all_success() {
         Ok(dry_run_order)
     } else {
         // could not find valid order

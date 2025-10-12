@@ -93,7 +93,7 @@ fn create_set_up_wrapper(
             Box::pin(async move {
                 match #async_call {
                     Ok(teardown) => #ok_result,
-                    Err(e) => Err(e),
+                    Err(e) => Err(e.into()),
                 }
             })
         }

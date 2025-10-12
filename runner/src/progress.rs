@@ -108,7 +108,9 @@ impl ProgressListener {
     }
 
     async fn publish(&self, ev: ProgressEvent) {
-        self.tx.send(ev).await.unwrap()
+        if let Some(err)  =self.tx.send(ev).await.err() {
+            println!("Failed to publish progress event {:?}", err.0);
+        }
     }
 }
 
