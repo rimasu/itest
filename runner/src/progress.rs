@@ -8,6 +8,10 @@ enum ProgressEvent {
     SetUpStarted {
         task: Task,
         name: String,
+    },  
+    SetUpReady {
+        task: Task,
+        name: String,
     },
     SetUpFinished {
         task: Task,
@@ -54,6 +58,15 @@ pub struct ProgressListener {
 impl ProgressListener {
     pub async fn set_ups_started(&self) {
         self.publish(ProgressEvent::SetUpsStarted).await
+    }
+
+
+    pub async fn set_up_ready(&self, task: Task, name: &str) {
+        self.publish(ProgressEvent::SetUpReady {
+            task,
+            name: name.to_owned(),
+        })
+        .await
     }
 
     pub async fn set_up_started(&self, task: Task, name: &str) {
@@ -152,6 +165,9 @@ fn log_event(event: ProgressEvent) {
         }
         ProgressEvent::SetUpStarted { task, name } => {
             println!("set up {} started", name);
+        }
+        ProgressEvent::SetUpReady { task, name } => {
+            println!("set up {} ready", name);
         }
         ProgressEvent::SetUpFinished {
             task: _,
