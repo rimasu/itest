@@ -7,28 +7,17 @@ use crate::{
     tasklist::Task,
 };
 
-impl fmt::Debug for TearDownOutcome {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        writeln!(f, "     ok: {}", self.num_ok)?;
-        writeln!(f, " failed: {}", self.num_failed)?;
-        Ok(())
-    }
-}
-
-pub struct TearDownOutcome {
-    num_ok: usize,
-    num_failed: usize,
-}
-
 pub async fn run_tear_downs(
     progress: ProgressListener,
     tear_downs: Vec<(Task, Box<dyn TearDown + 'static>)>,
 ) -> PhaseSummary {
     let mut tear_down_result = Vec::new();
 
-    let mut summary = PhaseSummaryBuilder::new();
+    let mut summary = PhaseSummaryBuilder::new(Phase::TearDown);
 
-    progress.phase_started(Phase::TearDown, tear_downs.len()).await;
+    progress
+        .phase_started(Phase::TearDown, tear_downs.len())
+        .await;
     for (task, mut tear_down) in tear_downs.into_iter().rev() {
         progress.task_running(Phase::TearDown, task).await;
 
@@ -52,9 +41,7 @@ pub async fn run_tear_downs(
     }
 
     let summary = summary.build();
-    progress
-        .phase_finished(Phase::TearDown, summary.clone())
-        .await;
+    progress.phase_finished(summary.clone()).await;
 
     summary
 }

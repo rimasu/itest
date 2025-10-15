@@ -44,7 +44,7 @@ impl fmt::Display for TaskStatus {
 
 pub struct SummaryBuilder {
     start: Instant,
-    phases: Vec<(Phase, PhaseSummary)>,
+    phases: Vec<PhaseSummary>,
 }
 
 impl SummaryBuilder {
@@ -55,8 +55,8 @@ impl SummaryBuilder {
         }
     }
 
-    pub fn add_phase(&mut self, phase: Phase, summary: PhaseSummary) {
-        self.phases.push((phase, summary));
+    pub fn add_phase(&mut self, summary: PhaseSummary) {
+        self.phases.push(summary);
     }
 
     pub fn build(self) -> Summary {
@@ -70,14 +70,14 @@ impl SummaryBuilder {
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct Summary {
     duration: Duration,
-    phases: Vec<(Phase, PhaseSummary)>,
+    phases: Vec<PhaseSummary>,
 }
 
 impl fmt::Display for Summary {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        for (phase, summary) in &self.phases {
+        for summary in &self.phases {
             let result = if summary.all_ok() { "ok" } else { "failed" };
-            writeln!(f, "{phase} result: {result}. {}", summary,)?;
+            writeln!(f, "{} result: {result}. {}", summary.phase, summary,)?;
         }
         writeln!(
             f,
@@ -88,13 +88,15 @@ impl fmt::Display for Summary {
 }
 
 pub struct PhaseSummaryBuilder {
+    phase: Phase,
     start: Instant,
     counts: HashMap<TaskStatus, usize>,
 }
 
 impl PhaseSummaryBuilder {
-    pub fn new() -> Self {
+    pub fn new(phase: Phase) -> Self {
         Self {
+            phase,
             start: Instant::now(),
             counts: HashMap::new(),
         }
@@ -106,6 +108,7 @@ impl PhaseSummaryBuilder {
 
     pub fn build(self) -> PhaseSummary {
         PhaseSummary {
+            phase: self.phase,
             duration: self.start.elapsed(),
             counts: self.counts,
         }
@@ -114,6 +117,7 @@ impl PhaseSummaryBuilder {
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct PhaseSummary {
+    phase: Phase,
     duration: Duration,
     counts: HashMap<TaskStatus, usize>,
 }
@@ -148,7 +152,6 @@ enum ProgressEvent {
         num_tasks: usize,
     },
     PhaseFinished {
-        phase: Phase,
         summary: PhaseSummary,
     },
     UpdateTask {
@@ -218,9 +221,8 @@ impl ProgressListener {
             .await;
     }
 
-    pub async fn phase_finished(&self, phase: Phase, summary: PhaseSummary) {
-        self.publish(ProgressEvent::PhaseFinished { phase, summary })
-            .await;
+    pub async fn phase_finished(&self, summary: PhaseSummary) {
+        self.publish(ProgressEvent::PhaseFinished { summary }).await;
     }
 
     pub async fn task_running(&self, phase: Phase, task: Task) {
@@ -299,9 +301,9 @@ impl MonitorWorker {
             ProgressEvent::PhaseStarted { phase, num_tasks } => {
                 println!("running {num_tasks} {phase} tasks");
             }
-            ProgressEvent::PhaseFinished { phase, summary } => {
+            ProgressEvent::PhaseFinished { summary } => {
                 let result = if summary.all_ok() { "ok" } else { "failed" };
-                println!("\n{phase} result: {result}. {}", summary,);
+                println!("\n{} result: {result}. {}", summary.phase, summary,);
             }
             ProgressEvent::UpdateTask {
                 phase: _,

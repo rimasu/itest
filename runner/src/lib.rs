@@ -121,7 +121,7 @@ impl ITest {
         let (tear_downs, set_up_outcome) =
             run_set_ups(set_ups, &mut global_ctx, monitor.listener()).await;
 
-        summary.add_phase(Phase::SetUp, set_up_outcome.clone());
+        summary.add_phase(set_up_outcome.clone());
 
         let conculsion = if set_up_outcome.all_ok() {
             Some(run_tests())
@@ -130,7 +130,7 @@ impl ITest {
         };
 
         let tear_down_outcome = run_tear_downs(monitor.listener(), tear_downs).await;
-        summary.add_phase(Phase::TearDown, tear_down_outcome);
+        summary.add_phase(tear_down_outcome);
 
         let summary = summary.build();
 

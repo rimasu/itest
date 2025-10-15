@@ -29,7 +29,9 @@ pub async fn run_set_ups(
     let mut tear_downs = Vec::new();
     let mut errs: Vec<SetUpError> = Vec::new();
 
-    progress.phase_started(Phase::SetUp, set_ups.tasks().count()).await;
+    progress
+        .phase_started(Phase::SetUp, set_ups.tasks().count())
+        .await;
 
     let mut tasks = set_ups.make_task_list();
 
@@ -42,7 +44,7 @@ pub async fn run_set_ups(
         }
     }
 
-    let mut summary = PhaseSummaryBuilder::new();
+    let mut summary = PhaseSummaryBuilder::new(Phase::SetUp);
 
     while let Some((task, result)) = workers.pull_result().await {
         match result {
@@ -74,7 +76,7 @@ pub async fn run_set_ups(
     }
 
     let summary = summary.build();
-    progress.phase_finished(Phase::SetUp, summary.clone()).await;
+    progress.phase_finished(summary.clone()).await;
 
     (tear_downs, summary)
 }
