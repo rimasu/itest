@@ -1,7 +1,6 @@
+use crate::TearDown;
 use async_trait::async_trait;
 use testcontainers::{ContainerAsync, GenericImage};
-
-use crate::{Context, TearDown};
 
 pub struct ContainerTearDown {
     container: Option<ContainerAsync<GenericImage>>,

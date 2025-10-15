@@ -1,7 +1,7 @@
 #![feature(exit_status_error)]
 
 use std::pin::Pin;
-use std::{fmt, path::PathBuf, process::Command};
+use std::{path::PathBuf, process::Command};
 
 use async_trait::async_trait;
 pub use inventory::{collect, submit};
@@ -13,38 +13,18 @@ mod context;
 mod deptable;
 mod discover;
 mod set_up_runner;
-mod tasklist;
-
 mod set_up_workers;
+mod tasklist;
+mod tear_down_runner;
+
 mod progress;
 
-pub use context::{Context, GlobalContext, Param};
-
-use libtest_mimic::{Arguments, Conclusion, Trial};
-
 use crate::discover::discover_setups;
-use crate::progress::launch_progress_monitor;
+use crate::progress::{Phase, ProgressMonitor, SummaryBuilder};
 use crate::set_up_runner::run_set_ups;
-
-
-
-
-#[derive(Eq, PartialEq, Clone, Copy)]
-pub enum Outcome {
-    Ok,
-    Failed,
-    Skipped,
-}
-
-impl fmt::Display for Outcome {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write_str(match self {
-            Outcome::Skipped => "skipped",
-            Outcome::Ok => "ok",
-            Outcome::Failed => "FAILED",
-        })
-    }
-}
+use crate::tear_down_runner::run_tear_downs;
+pub use context::{Context, GlobalContext, Param};
+use libtest_mimic::{Arguments, Conclusion, Trial};
 
 #[derive(Debug)]
 pub enum SetUpError {
@@ -59,7 +39,7 @@ impl From<Box<dyn std::error::Error>> for SetUpError {
 
 pub type SetUpResult = Result<Option<Box<dyn TearDown>>, SetUpError>;
 
-pub type SetFnOutput = Pin<Box<dyn Future<Output = SetUpResult> + Send +'static>>;
+pub type SetFnOutput = Pin<Box<dyn Future<Output = SetUpResult> + Send + 'static>>;
 
 pub type SetUpFn = fn(Context) -> SetFnOutput;
 
@@ -128,28 +108,35 @@ impl ITest {
     }
 
     async fn run_async(self) {
+        let mut summary = SummaryBuilder::new();
         let workspace_root_dir = find_workspace_root_dir();
 
         let set_ups = discover_setups().unwrap();
         let task_names = set_ups.tasks().map(|(t, n)| (t, n.to_string())).collect();
 
-        let (_, listener) = launch_progress_monitor(task_names);
-        let mut context = GlobalContext::new(&workspace_root_dir);
+        let monitor = ProgressMonitor::new(task_names);
 
-        let set_up_outcome = run_set_ups(set_ups, &mut context, listener).await;
+        let mut global_ctx = GlobalContext::new(&workspace_root_dir);
 
-        let conculsion = if set_up_outcome.success {
+        let (tear_downs, set_up_outcome) =
+            run_set_ups(set_ups, &mut global_ctx, monitor.listener()).await;
+
+        summary.add_phase(Phase::SetUp, set_up_outcome.clone());
+
+        let conculsion = if set_up_outcome.all_ok() {
             Some(run_tests())
         } else {
             None
         };
 
-        let mut tear_down_result = Vec::new();
-        for (name, mut tear_down) in set_up_outcome.tear_downs.into_iter().rev() {
-            println!("tear down {} ", name.0);
-            let result = (*tear_down).tear_down().await;
-            tear_down_result.push(result);
-        }
+        let tear_down_outcome = run_tear_downs(monitor.listener(), tear_downs).await;
+        summary.add_phase(Phase::TearDown, tear_down_outcome);
+
+        let summary = summary.build();
+
+        monitor.listener().finished(summary).await;
+
+        monitor.shutdown().await;
 
         if let Some(conclusion) = conculsion {
             conclusion.exit();

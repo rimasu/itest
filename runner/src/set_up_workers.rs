@@ -55,7 +55,6 @@ pub struct SetUpWorkers {
 
 impl SetUpWorkers {
     pub async fn push(&self, task: Task, set_up_fn: &'static SetUpFn, ctx: Context) {
-        self.progress.task_ready(Phase::SetUp, task).await;
         self.run_tx.send((task, set_up_fn, ctx)).await.unwrap();
     }
 

@@ -8,8 +8,6 @@ use std::{
 use dashmap::DashMap;
 use tokio::io::AsyncBufRead;
 
-use crate::progress::ProgressListener;
-
 #[derive(Clone)]
 pub struct Param {
     raw: String,

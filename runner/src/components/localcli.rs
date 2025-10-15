@@ -50,7 +50,7 @@ impl LocalCliSetUp {
             .args(&self.args)
             .spawn()?;
 
-        let output = child.wait_with_output()?.exit_ok()?;
+        child.wait_with_output()?.exit_ok()?;
         Ok(())
     }
 }

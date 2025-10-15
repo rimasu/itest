@@ -1,30 +1,35 @@
-use std::time::Instant;
+use std::{fmt, time::Instant};
 
 use crate::{
     GlobalContext, SetUpError, TearDown,
     discover::SetUps,
-    progress::{Phase, ProgressListener},
+    progress::{Phase, PhaseSummary, PhaseSummaryBuilder, ProgressListener, TaskStatus},
     set_up_workers::launch_set_up_workers,
     tasklist::{Status, Task},
 };
 
 pub struct SetUpOutcome {
-    pub success: bool,
-    pub tear_downs: Vec<(Task, Box<dyn TearDown + 'static>)>,
+    num_ok: usize,
+    num_failed: usize,
+    num_skipped: usize,
+}
+impl SetUpOutcome {
+    pub(crate) fn is_success(&self) -> bool {
+        self.num_failed == 0 && self.num_skipped == 0
+    }
 }
 
 pub async fn run_set_ups(
     set_ups: SetUps,
     global_ctx: &mut GlobalContext,
     progress: ProgressListener,
-) -> SetUpOutcome {
+) -> (Vec<(Task, Box<dyn TearDown + 'static>)>, PhaseSummary) {
     let mut workers = launch_set_up_workers(3, progress.clone());
 
     let mut tear_downs = Vec::new();
     let mut errs: Vec<SetUpError> = Vec::new();
 
-    let phase_start = Instant::now();
-    progress.phase_started(Phase::SetUp).await;
+    progress.phase_started(Phase::SetUp, set_ups.tasks().count()).await;
 
     let mut tasks = set_ups.make_task_list();
 
@@ -37,6 +42,8 @@ pub async fn run_set_ups(
         }
     }
 
+    let mut summary = PhaseSummaryBuilder::new();
+
     while let Some((task, result)) = workers.pull_result().await {
         match result {
             Ok(out) => {
@@ -44,10 +51,12 @@ pub async fn run_set_ups(
                     tear_downs.push((task, tear_down));
                 }
                 tasks.set_status(task, Status::Success);
+                summary.inc(TaskStatus::Ok);
             }
             Err(e) => {
                 tasks.set_status(task, Status::Failed);
                 errs.push(e);
+                summary.inc(TaskStatus::Failed);
             }
         }
 
@@ -64,12 +73,8 @@ pub async fn run_set_ups(
         }
     }
 
-    let success = tasks.all_success();
-    let phase_duration = phase_start.elapsed();
-    progress.phase_finished(Phase::SetUp, phase_duration).await;
+    let summary = summary.build();
+    progress.phase_finished(Phase::SetUp, summary.clone()).await;
 
-    SetUpOutcome {
-        success,
-        tear_downs,
-    }
+    (tear_downs, summary)
 }
