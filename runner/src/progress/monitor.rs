@@ -1,150 +1,26 @@
-use crate::tasklist::Task;
+use crate::{progress::{Phase, PhaseSummary, Summary, TaskStatus}, tasklist::Task};
+
 use std::{
     collections::HashMap,
-    fmt,
-    time::{Duration, Instant},
+    time::{Duration},
 };
+
 use tokio::{sync::mpsc, task::JoinHandle};
 
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub enum Phase {
-    SetUp,
-    TearDown,
+
+/// Responsible for creating `listeners` and handling shutdown.
+pub struct ProgressMonitor {
+    listener: ProgressListener,
+    handle: JoinHandle<()>,
 }
 
-impl fmt::Display for Phase {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let s = match self {
-            Phase::SetUp => "set up",
-            Phase::TearDown => "tear down",
-        };
-        fmt::Display::fmt(s, f)
-    }
+#[derive(Clone)]
+pub struct ProgressListener {
+    tx: mpsc::Sender<ProgressEvent>,
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Hash)]
-pub enum TaskStatus {
-    Running,
-    Failed,
-    Ok,
-    Skipped,
-}
 
-impl fmt::Display for TaskStatus {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let s = match self {
-            TaskStatus::Running => "running",
-            TaskStatus::Failed => "failed",
-            TaskStatus::Ok => "ok",
-            TaskStatus::Skipped => "skipped",
-        };
-        fmt::Display::fmt(s, f)
-    }
-}
-
-pub struct SummaryBuilder {
-    start: Instant,
-    phases: Vec<PhaseSummary>,
-}
-
-impl SummaryBuilder {
-    pub fn new() -> Self {
-        Self {
-            start: Instant::now(),
-            phases: Vec::new(),
-        }
-    }
-
-    pub fn add_phase(&mut self, summary: PhaseSummary) {
-        self.phases.push(summary);
-    }
-
-    pub fn build(self) -> Summary {
-        Summary {
-            duration: self.start.elapsed(),
-            phases: self.phases,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub struct Summary {
-    duration: Duration,
-    phases: Vec<PhaseSummary>,
-}
-
-impl fmt::Display for Summary {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        for summary in &self.phases {
-            let result = if summary.all_ok() { "ok" } else { "failed" };
-            writeln!(f, "{} result: {result}. {}", summary.phase, summary,)?;
-        }
-        writeln!(
-            f,
-            "finished in {:.02}s",
-            self.duration.as_millis() as f64 / 1000.0
-        )
-    }
-}
-
-pub struct PhaseSummaryBuilder {
-    phase: Phase,
-    start: Instant,
-    counts: HashMap<TaskStatus, usize>,
-}
-
-impl PhaseSummaryBuilder {
-    pub fn new(phase: Phase) -> Self {
-        Self {
-            phase,
-            start: Instant::now(),
-            counts: HashMap::new(),
-        }
-    }
-
-    pub fn inc(&mut self, status: TaskStatus) {
-        *(self.counts.entry(status).or_default()) += 1;
-    }
-
-    pub fn build(self) -> PhaseSummary {
-        PhaseSummary {
-            phase: self.phase,
-            duration: self.start.elapsed(),
-            counts: self.counts,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub struct PhaseSummary {
-    phase: Phase,
-    duration: Duration,
-    counts: HashMap<TaskStatus, usize>,
-}
-
-impl fmt::Display for PhaseSummary {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        for status in &[TaskStatus::Ok, TaskStatus::Failed, TaskStatus::Skipped] {
-            if let Some(count) = self.counts.get(status) {
-                write!(f, "{} {}; ", *count, status)?;
-            }
-        }
-        write!(
-            f,
-            "finished in {:.02}s",
-            self.duration.as_millis() as f64 / 1000.0
-        )
-    }
-}
-
-impl PhaseSummary {
-    pub fn all_ok(&self) -> bool {
-        let total: usize = self.counts.values().sum();
-        let okay = *self.counts.get(&TaskStatus::Ok).unwrap_or(&0);
-        okay == total
-    }
-}
-
+/// Events passed from listnener to worker.
 #[derive(Debug, Clone, Eq, PartialEq)]
 enum ProgressEvent {
     PhaseStarted {
@@ -167,15 +43,6 @@ enum ProgressEvent {
     Shutdown,
 }
 
-#[derive(Clone)]
-pub struct ProgressListener {
-    tx: mpsc::Sender<ProgressEvent>,
-}
-
-pub struct ProgressMonitor {
-    listener: ProgressListener,
-    handle: JoinHandle<()>,
-}
 
 impl ProgressMonitor {
     pub fn new(task_names: HashMap<Task, String>) -> Self {
@@ -302,8 +169,7 @@ impl MonitorWorker {
                 println!("running {num_tasks} {phase} tasks");
             }
             ProgressEvent::PhaseFinished { summary } => {
-                let result = if summary.all_ok() { "ok" } else { "failed" };
-                println!("\n{} result: {result}. {}", summary.phase, summary,);
+                println!("\n{} {}", summary.phase, summary,);
             }
             ProgressEvent::UpdateTask {
                 phase: _,

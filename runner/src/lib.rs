@@ -19,8 +19,9 @@ mod tear_down_runner;
 
 mod progress;
 
+
 use crate::discover::discover_setups;
-use crate::progress::{Phase, ProgressMonitor, SummaryBuilder};
+use crate::progress::{PhaseResult, ProgressMonitor, SummaryBuilder};
 use crate::set_up_runner::run_set_ups;
 use crate::tear_down_runner::run_tear_downs;
 pub use context::{Context, GlobalContext, Param};
@@ -123,7 +124,7 @@ impl ITest {
 
         summary.add_phase(set_up_outcome.clone());
 
-        let conculsion = if set_up_outcome.all_ok() {
+        let conculsion = if set_up_outcome.result == PhaseResult::Ok {
             Some(run_tests())
         } else {
             None
