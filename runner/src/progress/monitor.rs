@@ -1,4 +1,4 @@
-use crate::{progress::{Phase, PhaseSummary, Summary, TaskStatus}, tasklist::Task};
+use crate::{progress::{Phase, PhaseSummary, OverallSummary, TaskStatus}, tasklist::Task};
 
 use std::{
     collections::HashMap,
@@ -38,7 +38,7 @@ enum ProgressEvent {
         err_msg: Option<String>,
     },
     FinalStatus {
-        summary: Summary,
+        summary: OverallSummary,
     },
     Shutdown,
 }
@@ -136,7 +136,7 @@ impl ProgressListener {
         .await
     }
 
-    pub async fn finished(&self, summary: Summary) {
+    pub async fn finished(&self, summary: OverallSummary) {
         self.publish(ProgressEvent::FinalStatus { summary }).await
     }
 
@@ -190,7 +190,7 @@ impl MonitorWorker {
                 }
             }
             ProgressEvent::FinalStatus { summary } => {
-                println!("\nSummary\n{}", summary)
+                println!("\n{}", summary)
             }
             ProgressEvent::Shutdown => panic!("Should not be logging shutdown event"),
         }

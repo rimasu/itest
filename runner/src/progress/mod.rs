@@ -1,10 +1,8 @@
 use std::fmt;
 
+mod status;
 mod monitor;
 mod summary;
-
-pub use monitor::{ProgressListener, ProgressMonitor};
-pub use summary::{Summary, SummaryBuilder, PhaseSummary, PhaseSummaryBuilder};
 
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -23,41 +21,9 @@ impl fmt::Display for Phase {
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Hash)]
-pub enum TaskStatus {
-    Running,
-    Failed,
-    Ok,
-    Skipped,
-}
 
-impl fmt::Display for TaskStatus {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let s = match self {
-            TaskStatus::Running => "running",
-            TaskStatus::Failed => "failed",
-            TaskStatus::Ok => "ok",
-            TaskStatus::Skipped => "skipped",
-        };
-        fmt::Display::fmt(s, f)
-    }
-}
+pub use status::{TaskStatus, PhaseResult, OverallResult};
+pub use monitor::{ProgressListener, ProgressMonitor};
+pub use summary::{OverallSummary, OverallSummaryBuilder, PhaseSummary, PhaseSummaryBuilder};
 
 
-#[derive(Debug, Clone, Eq, PartialEq, Hash)]
-pub enum PhaseResult {
-    Failed,
-    Ok,
-    Skipped,
-}
-
-impl fmt::Display for PhaseResult {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let s = match self {
-            PhaseResult::Failed => "failed",
-            PhaseResult::Ok => "ok",
-            PhaseResult::Skipped => "skipped",
-        };
-        fmt::Display::fmt(s, f)
-    }
-}

@@ -2,14 +2,14 @@ use std::collections::HashMap;
 use std::fmt;
 use std::time::{Duration, Instant};
 
-use crate::progress::{Phase, PhaseResult, TaskStatus};
+use crate::progress::{OverallResult, Phase, PhaseResult, TaskStatus};
 
-pub struct SummaryBuilder {
+pub struct OverallSummaryBuilder {
     start: Instant,
     phases: Vec<PhaseSummary>,
 }
 
-impl SummaryBuilder {
+impl OverallSummaryBuilder {
     pub fn new() -> Self {
         Self {
             start: Instant::now(),
@@ -21,8 +21,19 @@ impl SummaryBuilder {
         self.phases.push(summary);
     }
 
-    pub fn build(self) -> Summary {
-        Summary {
+    fn result(&self) -> OverallResult {
+        let all_phases_ok = self.phases.iter().all(|p| p.result == PhaseResult::Ok);
+        if all_phases_ok {
+            OverallResult::Ok
+        } else {
+            OverallResult::Failed
+        }
+    }
+
+    pub fn build(self) -> OverallSummary {
+        let result = self.result();
+        OverallSummary {
+            result,
             duration: self.start.elapsed(),
             phases: self.phases,
         }
@@ -30,12 +41,13 @@ impl SummaryBuilder {
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub struct Summary {
+pub struct OverallSummary {
+    result: OverallResult,
     duration: Duration,
     phases: Vec<PhaseSummary>,
 }
 
-impl fmt::Display for Summary {
+impl fmt::Display for OverallSummary {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let width = self
             .phases
@@ -44,20 +56,18 @@ impl fmt::Display for Summary {
             .max()
             .unwrap_or(0);
 
-        for summary in &self.phases {
-            writeln!(
-                f,
-                " {:>width$} {}",
-                summary.phase,
-                summary,
-                width = width
-            )?;
-        }
         writeln!(
             f,
-            "\nfinished in {:.02}s",
+            "Summary result: {}. finished in {:.02}s\n",
+            self.result,
             self.duration.as_millis() as f64 / 1000.0
-        )
+        )?;
+
+        for summary in &self.phases {
+            writeln!(f, " {:>width$} {}", summary.phase, summary, width = width)?;
+        }
+
+        Ok(())
     }
 }
 

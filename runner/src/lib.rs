@@ -21,7 +21,7 @@ mod progress;
 
 
 use crate::discover::discover_setups;
-use crate::progress::{PhaseResult, ProgressMonitor, SummaryBuilder};
+use crate::progress::{PhaseResult, ProgressMonitor, OverallSummaryBuilder};
 use crate::set_up_runner::run_set_ups;
 use crate::tear_down_runner::run_tear_downs;
 pub use context::{Context, GlobalContext, Param};
@@ -109,7 +109,7 @@ impl ITest {
     }
 
     async fn run_async(self) {
-        let mut summary = SummaryBuilder::new();
+        let mut summary = OverallSummaryBuilder::new();
         let workspace_root_dir = find_workspace_root_dir();
 
         let set_ups = discover_setups().unwrap();
