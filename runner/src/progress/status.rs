@@ -1,7 +1,7 @@
 use std::fmt;
 
 
-#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub enum TaskStatus {
     Running,
     Failed,
@@ -22,7 +22,7 @@ impl fmt::Display for TaskStatus {
 }
 
 
-#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub enum PhaseResult {
     Failed,
     Ok,
@@ -41,7 +41,7 @@ impl fmt::Display for PhaseResult {
 }
 
 
-#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub enum OverallResult {
     Failed,
     Ok

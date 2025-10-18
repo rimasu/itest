@@ -1,12 +1,13 @@
-use crate::{progress::{Phase, PhaseSummary, OverallSummary, TaskStatus}, tasklist::Task};
-
-use std::{
-    collections::HashMap,
-    time::{Duration},
+use crate::{
+    progress::{OverallSummary, Phase, PhaseSummary, TaskStatus},
+    tasklist::Task,
 };
 
+use anstream::Stdout;
+use anstyle::{AnsiColor, Color, Style};
+use std::io::Write;
+use std::{collections::HashMap, time::Duration};
 use tokio::{sync::mpsc, task::JoinHandle};
-
 
 /// Responsible for creating `listeners` and handling shutdown.
 pub struct ProgressMonitor {
@@ -18,7 +19,6 @@ pub struct ProgressMonitor {
 pub struct ProgressListener {
     tx: mpsc::Sender<ProgressEvent>,
 }
-
 
 /// Events passed from listnener to worker.
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -43,15 +43,9 @@ enum ProgressEvent {
     Shutdown,
 }
 
-
 impl ProgressMonitor {
     pub fn new(task_names: HashMap<Task, String>) -> Self {
-        let max_name_len = task_names.values().map(|n| n.len()).max().unwrap_or(0);
-        let worker = MonitorWorker {
-            task_names,
-            max_name_len,
-        };
-
+        let mut worker = MonitorWorker::new(task_names);
         let (tx, mut rx) = mpsc::channel(100);
         let handle = tokio::spawn(async move {
             while let Some(ev) = rx.recv().await {
@@ -149,10 +143,42 @@ impl ProgressListener {
 
 struct MonitorWorker {
     task_names: HashMap<Task, String>,
+    stdout: Stdout,
+    bold_style: Style,
+    good_style: Style,
+    bad_style: Style,
+    norm_style: Style,
     max_name_len: usize,
 }
 
 impl MonitorWorker {
+    fn new(task_names: HashMap<Task, String>) -> Self {
+        let max_name_len = task_names.values().map(|n| n.len()).max().unwrap_or(0);
+        let stdout = anstream::stdout();
+        let bold_style = Style::new().bold();
+        let bad_style = Style::new().fg_color(Some(Color::Ansi(AnsiColor::Red)));
+        let good_style = Style::new().fg_color(Some(Color::Ansi(AnsiColor::Green)));
+        let norm_style = Style::new().fg_color(Some(Color::Ansi(AnsiColor::White)));
+        Self {
+            task_names,
+            stdout,
+            bold_style,
+            good_style,
+            bad_style,
+            norm_style,
+            max_name_len,
+        }
+    }
+
+    fn task_style(&self, status: TaskStatus) -> &Style {
+        match status {
+            TaskStatus::Running => &self.norm_style,
+            TaskStatus::Failed => &self.bad_style,
+            TaskStatus::Ok => &self.good_style,
+            TaskStatus::Skipped => &self.norm_style,
+        }
+    }
+
     fn task_name(&self, task: Task) -> String {
         let raw = self
             .task_names
@@ -163,13 +189,21 @@ impl MonitorWorker {
         format!("{:width$}", raw, width = self.max_name_len)
     }
 
-    fn log_event(&self, event: ProgressEvent) {
+    fn log_event(&mut self, event: ProgressEvent) {
         match event {
             ProgressEvent::PhaseStarted { phase, num_tasks } => {
-                println!("running {num_tasks} {phase} tasks");
+                writeln!(&mut self.stdout, "running {num_tasks} {phase} tasks");
             }
             ProgressEvent::PhaseFinished { summary } => {
-                println!("\n{} {}", summary.phase, summary,);
+                let red = Style::new().fg_color(Some(Color::Ansi(AnsiColor::Red)));
+                writeln!(
+                    &mut self.stdout,
+                    "\n{} {} {} {}",
+                    red.render(),
+                    summary.phase,
+                    summary,
+                    red.render_reset()
+                );
             }
             ProgressEvent::UpdateTask {
                 phase: _,
@@ -179,18 +213,30 @@ impl MonitorWorker {
                 err_msg,
             } => {
                 let name = self.task_name(task);
-                print!(" {name}  {status:10}");
+                let status_style = self.task_style(status);
+                print!(
+                    " {}{}{}  {}{status:10}{}",
+                    self.bold_style.render(),
+                    name,
+                    self.bold_style.render_reset(),
+                    status_style.render(),
+                    status_style.render_reset()
+                );
                 if let Some(duration) = duration {
-                    println!("{:8.02}s", duration.as_millis() as f64 / 1000.0);
+                    writeln!(
+                        &mut self.stdout,
+                        "{:8.02}s",
+                        duration.as_millis() as f64 / 1000.0
+                    );
                 } else {
-                    println!();
+                    writeln!(&mut self.stdout);
                 }
                 if let Some(err_msg) = err_msg {
-                    println!("\t{err_msg}")
+                    writeln!(&mut self.stdout, "\t{err_msg}");
                 }
             }
             ProgressEvent::FinalStatus { summary } => {
-                println!("\n{}", summary)
+                writeln!(&mut self.stdout, "\n{}", summary);
             }
             ProgressEvent::Shutdown => panic!("Should not be logging shutdown event"),
         }
