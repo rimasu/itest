@@ -42,33 +42,9 @@ impl OverallSummaryBuilder {
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct OverallSummary {
-    result: OverallResult,
-    duration: Duration,
-    phases: Vec<PhaseSummary>,
-}
-
-impl fmt::Display for OverallSummary {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let width = self
-            .phases
-            .iter()
-            .map(|p| p.phase.to_string().len())
-            .max()
-            .unwrap_or(0);
-
-        writeln!(
-            f,
-            "Summary result: {}. finished in {:.02}s\n",
-            self.result,
-            self.duration.as_millis() as f64 / 1000.0
-        )?;
-
-        for summary in &self.phases {
-            writeln!(f, " {:>width$} {}", summary.phase, summary, width = width)?;
-        }
-
-        Ok(())
-    }
+    pub result: OverallResult,
+    pub duration: Duration,
+    pub phases: Vec<PhaseSummary>,
 }
 
 pub struct PhaseSummaryBuilder {
@@ -120,22 +96,6 @@ impl PhaseSummaryBuilder {
 pub struct PhaseSummary {
     pub phase: Phase,
     pub result: PhaseResult,
-    duration: Duration,
-    counts: HashMap<TaskStatus, usize>,
-}
-
-impl fmt::Display for PhaseSummary {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "result: {}. ", self.result)?;
-        for status in &[TaskStatus::Ok, TaskStatus::Failed, TaskStatus::Skipped] {
-            if let Some(count) = self.counts.get(status) {
-                write!(f, "{} {}; ", *count, status)?;
-            }
-        }
-        write!(
-            f,
-            "finished in {:.02}s",
-            self.duration.as_millis() as f64 / 1000.0
-        )
-    }
+    pub duration: Duration,
+    pub counts: HashMap<TaskStatus, usize>,
 }

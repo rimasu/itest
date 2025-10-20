@@ -1,11 +1,11 @@
 use crate::{
-    progress::{OverallSummary, Phase, PhaseSummary, TaskStatus},
+    progress::{OverallResult, OverallSummary, Phase, PhaseResult, PhaseSummary, TaskStatus},
     tasklist::Task,
 };
 
 use anstream::Stdout;
 use anstyle::{AnsiColor, Color, Style};
-use std::io::Write;
+use std::io::{self, Write};
 use std::{collections::HashMap, time::Duration};
 use tokio::{sync::mpsc, task::JoinHandle};
 
@@ -52,7 +52,7 @@ impl ProgressMonitor {
                 if ev == ProgressEvent::Shutdown {
                     break;
                 } else {
-                    worker.log_event(ev);
+                    worker.log_event(ev).unwrap();
                 }
             }
         });
@@ -170,12 +170,27 @@ impl MonitorWorker {
         }
     }
 
-    fn task_style(&self, status: TaskStatus) -> &Style {
+    fn task_style(&self, status: TaskStatus) -> Style {
         match status {
-            TaskStatus::Running => &self.norm_style,
-            TaskStatus::Failed => &self.bad_style,
-            TaskStatus::Ok => &self.good_style,
-            TaskStatus::Skipped => &self.norm_style,
+            TaskStatus::Running => self.norm_style,
+            TaskStatus::Failed => self.bad_style,
+            TaskStatus::Ok => self.good_style,
+            TaskStatus::Skipped => self.norm_style,
+        }
+    }
+
+    fn phase_style(&self, result: PhaseResult) -> Style {
+        match result {
+            PhaseResult::Ok => self.good_style,
+            PhaseResult::Failed => self.bad_style,
+            PhaseResult::Skipped => self.norm_style,
+        }
+    }
+
+    fn overall_result_style(&self, result: OverallResult) -> Style {
+        match result {
+            OverallResult::Ok => self.good_style,
+            OverallResult::Failed => self.bad_style,
         }
     }
 
@@ -189,56 +204,132 @@ impl MonitorWorker {
         format!("{:width$}", raw, width = self.max_name_len)
     }
 
-    fn log_event(&mut self, event: ProgressEvent) {
+    fn log_event(&mut self, event: ProgressEvent) -> Result<(), io::Error> {
         match event {
             ProgressEvent::PhaseStarted { phase, num_tasks } => {
-                writeln!(&mut self.stdout, "running {num_tasks} {phase} tasks");
+                writeln!(&mut self.stdout, "\nrunning {num_tasks} {phase} tasks")
             }
-            ProgressEvent::PhaseFinished { summary } => {
-                let red = Style::new().fg_color(Some(Color::Ansi(AnsiColor::Red)));
-                writeln!(
-                    &mut self.stdout,
-                    "\n{} {} {} {}",
-                    red.render(),
-                    summary.phase,
-                    summary,
-                    red.render_reset()
-                );
-            }
+            ProgressEvent::PhaseFinished { summary } => self.log_phase_finished(summary),
             ProgressEvent::UpdateTask {
                 phase: _,
                 task,
                 status,
                 duration,
                 err_msg,
-            } => {
-                let name = self.task_name(task);
-                let status_style = self.task_style(status);
-                print!(
-                    " {}{}{}  {}{status:10}{}",
-                    self.bold_style.render(),
-                    name,
-                    self.bold_style.render_reset(),
-                    status_style.render(),
-                    status_style.render_reset()
-                );
-                if let Some(duration) = duration {
-                    writeln!(
-                        &mut self.stdout,
-                        "{:8.02}s",
-                        duration.as_millis() as f64 / 1000.0
-                    );
-                } else {
-                    writeln!(&mut self.stdout);
-                }
-                if let Some(err_msg) = err_msg {
-                    writeln!(&mut self.stdout, "\t{err_msg}");
-                }
-            }
-            ProgressEvent::FinalStatus { summary } => {
-                writeln!(&mut self.stdout, "\n{}", summary);
-            }
+            } => self.log_update_task(task, status, duration, err_msg),
+
+            ProgressEvent::FinalStatus { summary } => self.log_final_status(summary),
             ProgressEvent::Shutdown => panic!("Should not be logging shutdown event"),
         }
+    }
+
+    fn log_update_task(
+        &mut self,
+        task: Task,
+        status: TaskStatus,
+        duration: Option<Duration>,
+        err_msg: Option<String>,
+    ) -> Result<(), io::Error> {
+        let name = self.task_name(task);
+        let status_style = self.task_style(status);
+        let bold = self.bold_style;
+
+        write!(
+            &mut self.stdout,
+            " {}{}{}  {}{status:10}{}",
+            bold.render(),
+            name,
+            bold.render_reset(),
+            status_style.render(),
+            status_style.render_reset()
+        )?;
+
+        if let Some(duration) = duration {
+            writeln!(
+                &mut self.stdout,
+                "{:8.02}s",
+                duration.as_millis() as f64 / 1000.0
+            )?;
+        } else {
+            writeln!(&mut self.stdout)?;
+        }
+
+        if let Some(err_msg) = err_msg {
+            writeln!(
+                &mut self.stdout,
+                "\n\t{}{err_msg}{}",
+                self.bad_style.render(),
+                self.bad_style.render_reset()
+            )?;
+        }
+
+        Ok(())
+    }
+
+    fn log_phase_finished(&mut self, summary: PhaseSummary) -> Result<(), io::Error> {
+        write!(&mut self.stdout, "\n{} ", summary.phase,)?;
+
+        self.log_phase_details(summary)
+    }
+
+    fn log_phase_details(&mut self, summary: PhaseSummary) -> Result<(), io::Error> {
+        let result_style = self.phase_style(summary.result);
+
+        write!(
+            &mut self.stdout,
+            "result: {}{}{}. ",
+            result_style.render(),
+            summary.result,
+            result_style.render_reset()
+        )?;
+
+        for status in &[TaskStatus::Ok, TaskStatus::Failed, TaskStatus::Skipped] {
+            if let Some(count) = summary.counts.get(status) {
+                write!(&mut self.stdout, "{} {}; ", *count, status)?;
+            }
+        }
+
+        writeln!(
+            &mut self.stdout,
+            "finished in {:.02}s",
+            summary.duration.as_millis() as f64 / 1000.0
+        )
+    }
+
+    fn log_final_status(&mut self, summary: OverallSummary) -> Result<(), io::Error> {
+        let result_style = self.overall_result_style(summary.result);
+
+        let width = summary
+            .phases
+            .iter()
+            .map(|p| p.phase.to_string().len())
+            .max()
+            .unwrap_or(0);
+
+        writeln!(
+            &mut self.stdout,
+            "\nsummary\n",
+        )?;
+
+        for summary in summary.phases {
+            write!(
+                &mut self.stdout,
+                " {:>width$} ",
+                summary.phase,
+                width = width
+            )?;
+            self.log_phase_details(summary)?;
+        }
+
+
+        writeln!(
+            &mut self.stdout,
+            "\noverall result: {}{}{}. finished in {:.02}s\n",
+            result_style.render(),
+            summary.result,
+            result_style.render_reset(),
+            summary.duration.as_millis() as f64 / 1000.0
+        )
+
     }
 }
