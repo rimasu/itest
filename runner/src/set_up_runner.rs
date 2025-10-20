@@ -1,4 +1,3 @@
-use std::{fmt, time::Instant};
 
 use crate::{
     GlobalContext, SetUpError, TearDown,
@@ -8,16 +7,6 @@ use crate::{
     tasklist::{Status, Task},
 };
 
-pub struct SetUpOutcome {
-    num_ok: usize,
-    num_failed: usize,
-    num_skipped: usize,
-}
-impl SetUpOutcome {
-    pub(crate) fn is_success(&self) -> bool {
-        self.num_failed == 0 && self.num_skipped == 0
-    }
-}
 
 pub async fn run_set_ups(
     set_ups: SetUps,

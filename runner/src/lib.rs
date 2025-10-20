@@ -1,6 +1,8 @@
 #![feature(exit_status_error)]
+#![feature(exitcode_exit_method)]
 
 use std::pin::Pin;
+use std::process::ExitCode;
 use std::{path::PathBuf, process::Command};
 
 use async_trait::async_trait;
@@ -21,11 +23,11 @@ mod progress;
 
 
 use crate::discover::discover_setups;
-use crate::progress::{PhaseResult, ProgressMonitor, OverallSummaryBuilder};
+use crate::progress::{OverallResult, OverallSummaryBuilder, Phase, PhaseResult, PhaseSummary, PhaseSummaryBuilder, ProgressMonitor, TaskStatus};
 use crate::set_up_runner::run_set_ups;
 use crate::tear_down_runner::run_tear_downs;
 pub use context::{Context, GlobalContext, Param};
-use libtest_mimic::{Arguments, Conclusion, Trial};
+use libtest_mimic::{Arguments, Trial};
 
 #[derive(Debug)]
 pub enum SetUpError {
@@ -65,9 +67,11 @@ pub trait TearDown: Send {
     async fn tear_down(&mut self) -> Result<(), Box<dyn std::error::Error>>;
 }
 
-fn run_tests() -> Conclusion {
+fn run_tests() -> PhaseSummary {
     let args = Arguments::from_args();
     let mut tests = Vec::new();
+
+    let mut bld = PhaseSummaryBuilder::new(Phase::Test);
 
     for test in inventory::iter::<RegisteredITest> {
         tests.push(Trial::test(test.name.to_owned(), move || {
@@ -76,7 +80,13 @@ fn run_tests() -> Conclusion {
         }));
     }
 
-    libtest_mimic::run(&args, tests)
+    let conclusion = libtest_mimic::run(&args, tests);
+
+    bld.add( conclusion.num_passed as usize, TaskStatus::Ok);
+    bld.add( conclusion.num_ignored as usize, TaskStatus::Skipped);
+    bld.add( conclusion.num_failed  as usize, TaskStatus::Failed);
+
+    bld.build()
 }
 
 pub struct ITest {}
@@ -105,10 +115,15 @@ fn find_workspace_root_dir() -> PathBuf {
 impl ITest {
     pub fn run(self) {
         let rt = tokio::runtime::Runtime::new().unwrap();
-        rt.block_on(self.run_async())
+        let result = rt.block_on(self.run_async());
+        if result == OverallResult::Ok {
+            ExitCode::SUCCESS.exit_process()
+        } else {
+            ExitCode::FAILURE.exit_process()
+        }
     }
 
-    async fn run_async(self) {
+    async fn run_async(self) -> OverallResult {
         let mut summary = OverallSummaryBuilder::new();
         let workspace_root_dir = find_workspace_root_dir();
 
@@ -124,23 +139,22 @@ impl ITest {
 
         summary.add_phase(set_up_outcome.clone());
 
-        let conculsion = if set_up_outcome.result == PhaseResult::Ok {
-            Some(run_tests())
+        let test_outcome = if set_up_outcome.result == PhaseResult::Ok {
+            run_tests()
         } else {
-            None
+           PhaseSummary::skipped(Phase::Test)
         };
+        summary.add_phase(test_outcome);
 
         let tear_down_outcome = run_tear_downs(monitor.listener(), tear_downs).await;
         summary.add_phase(tear_down_outcome);
 
         let summary = summary.build();
 
-        monitor.listener().finished(summary).await;
+        monitor.listener().finished(summary.clone()).await;
 
         monitor.shutdown().await;
 
-        if let Some(conclusion) = conculsion {
-            conclusion.exit();
-        }
+        summary.result
     }
 }

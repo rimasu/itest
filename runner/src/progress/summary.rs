@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::fmt;
 use std::time::{Duration, Instant};
 
 use crate::progress::{OverallResult, Phase, PhaseResult, TaskStatus};
@@ -66,6 +65,11 @@ impl PhaseSummaryBuilder {
         *(self.counts.entry(status).or_default()) += 1;
     }
 
+    pub fn add(&mut self, count: usize, status: TaskStatus) {
+        *(self.counts.entry(status).or_default()) += count;
+    }
+
+
     fn all_tasks_ok(&self) -> bool {
         let total: usize = self.counts.values().sum();
         let okay = *self.counts.get(&TaskStatus::Ok).unwrap_or(&0);
@@ -79,6 +83,8 @@ impl PhaseSummaryBuilder {
             PhaseResult::Failed
         }
     }
+
+    
 
     pub fn build(self) -> PhaseSummary {
         let result = self.result();
@@ -98,4 +104,15 @@ pub struct PhaseSummary {
     pub result: PhaseResult,
     pub duration: Duration,
     pub counts: HashMap<TaskStatus, usize>,
+}
+
+impl PhaseSummary {
+    pub fn skipped(phase: Phase) -> Self {
+        Self {
+            phase,
+            result: PhaseResult::Skipped,
+            duration: Duration::from_secs(0),
+            counts: HashMap::new()
+        }
+    }
 }

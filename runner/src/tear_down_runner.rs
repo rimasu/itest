@@ -1,4 +1,3 @@
-use std::fmt;
 use std::time::Instant;
 
 use crate::{

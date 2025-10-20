@@ -8,6 +8,7 @@ mod summary;
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum Phase {
     SetUp,
+    Test,
     TearDown,
 }
 
@@ -15,6 +16,7 @@ impl fmt::Display for Phase {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let s = match self {
             Phase::SetUp => "set up",
+            Phase::Test => "test",
             Phase::TearDown => "tear down",
         };
         fmt::Display::fmt(s, f)

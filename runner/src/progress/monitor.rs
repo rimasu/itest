@@ -156,8 +156,8 @@ impl MonitorWorker {
         let max_name_len = task_names.values().map(|n| n.len()).max().unwrap_or(0);
         let stdout = anstream::stdout();
         let bold_style = Style::new().bold();
-        let bad_style = Style::new().fg_color(Some(Color::Ansi(AnsiColor::Red)));
-        let good_style = Style::new().fg_color(Some(Color::Ansi(AnsiColor::Green)));
+        let bad_style = Style::new().fg_color(Some(Color::Ansi(AnsiColor::BrightRed)));
+        let good_style = Style::new().fg_color(Some(Color::Ansi(AnsiColor::BrightGreen)));
         let norm_style = Style::new().fg_color(Some(Color::Ansi(AnsiColor::White)));
         Self {
             task_names,

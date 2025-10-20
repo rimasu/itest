@@ -43,14 +43,12 @@ pub fn launch_set_up_workers(num_workers: usize, progress: ProgressListener) -> 
     SetUpWorkers {
         run_tx,
         result_rx,
-        progress,
     }
 }
 
 pub struct SetUpWorkers {
     run_tx: async_channel::Sender<(Task, &'static SetUpFn, Context)>,
-    result_rx: mpsc::Receiver<(Task, SetUpResult)>,
-    progress: ProgressListener,
+    result_rx: mpsc::Receiver<(Task, SetUpResult)>
 }
 
 impl SetUpWorkers {
