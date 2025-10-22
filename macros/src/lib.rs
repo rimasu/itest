@@ -8,13 +8,19 @@ pub fn itest(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let fn_name = &input_fn.sig.ident;
     let fn_name_str = fn_name.to_string();
 
+    let span = input_fn.span().unwrap();
+    let file = span.file();
+    let line = span.line();
+
     let expanded = quote! {
         #input_fn
 
         ::itest_runner::submit! {
             ::itest_runner::RegisteredITest{
                 name: #fn_name_str,
-                test_fn: #fn_name
+                test_fn: #fn_name,
+                file: #file,
+                line: #line,
             }
         }
     };

@@ -14,20 +14,17 @@ pub mod components;
 mod context;
 mod deptable;
 mod discover;
-mod set_up_runner;
-mod set_up_workers;
+mod phases;
 mod tasklist;
-mod tear_down_runner;
 
 mod progress;
 
 
-use crate::discover::discover_setups;
-use crate::progress::{OverallResult, OverallSummaryBuilder, Phase, PhaseResult, PhaseSummary, PhaseSummaryBuilder, ProgressMonitor, TaskStatus};
-use crate::set_up_runner::run_set_ups;
-use crate::tear_down_runner::run_tear_downs;
+use crate::discover::{discover_setups, discover_tests, SetUps, Tests};
+use crate::progress::{OverallResult, ProgressListener, ProgressMonitor};
+
+use tasklist::Task;
 pub use context::{Context, GlobalContext, Param};
-use libtest_mimic::{Arguments, Trial};
 
 #[derive(Debug)]
 pub enum SetUpError {
@@ -46,6 +43,8 @@ pub type SetFnOutput = Pin<Box<dyn Future<Output = SetUpResult> + Send + 'static
 
 pub type SetUpFn = fn(Context) -> SetFnOutput;
 
+pub type TestFn = fn();
+
 inventory::collect!(RegisteredSetUp);
 
 pub struct RegisteredSetUp {
@@ -58,7 +57,9 @@ pub struct RegisteredSetUp {
 
 pub struct RegisteredITest {
     pub name: &'static str,
-    pub test_fn: fn(),
+    pub test_fn: TestFn,
+    pub file: &'static str,
+    pub line: usize,
 }
 inventory::collect!(RegisteredITest);
 
@@ -67,27 +68,25 @@ pub trait TearDown: Send {
     async fn tear_down(&mut self) -> Result<(), Box<dyn std::error::Error>>;
 }
 
-fn run_tests() -> PhaseSummary {
-    let args = Arguments::from_args();
-    let mut tests = Vec::new();
+#[derive(Default)]
+pub struct TearDowns {
+    tear_downs: Vec<(Task, Box<dyn TearDown + 'static>)>
+}
 
-    let mut bld = PhaseSummaryBuilder::new(Phase::Test);
-
-    for test in inventory::iter::<RegisteredITest> {
-        tests.push(Trial::test(test.name.to_owned(), move || {
-            (test.test_fn)();
-            Ok(())
-        }));
+impl TearDowns {
+    pub fn push(&mut self, task: Task, tear_down: Box<dyn TearDown + 'static>) {
+        self.tear_downs.push((task, tear_down))
     }
 
-    let conclusion = libtest_mimic::run(&args, tests);
+    pub fn len(&self) -> usize {
+        self.tear_downs.len()
+    }
 
-    bld.add( conclusion.num_passed as usize, TaskStatus::Ok);
-    bld.add( conclusion.num_ignored as usize, TaskStatus::Skipped);
-    bld.add( conclusion.num_failed  as usize, TaskStatus::Failed);
-
-    bld.build()
+    pub fn pop(&mut self) -> Option<(Task,Box<dyn TearDown + 'static>)> {
+        self.tear_downs.pop()
+    }
 }
+
 
 pub struct ITest {}
 
@@ -124,37 +123,28 @@ impl ITest {
     }
 
     async fn run_async(self) -> OverallResult {
-        let mut summary = OverallSummaryBuilder::new();
-        let workspace_root_dir = find_workspace_root_dir();
-
         let set_ups = discover_setups().unwrap();
+        let tests = discover_tests().unwrap();
         let task_names = set_ups.tasks().map(|(t, n)| (t, n.to_string())).collect();
-
+       
         let monitor = ProgressMonitor::new(task_names);
-
-        let mut global_ctx = GlobalContext::new(&workspace_root_dir);
-
-        let (tear_downs, set_up_outcome) =
-            run_set_ups(set_ups, &mut global_ctx, monitor.listener()).await;
-
-        summary.add_phase(set_up_outcome.clone());
-
-        let test_outcome = if set_up_outcome.result == PhaseResult::Ok {
-            run_tests()
-        } else {
-           PhaseSummary::skipped(Phase::Test)
-        };
-        summary.add_phase(test_outcome);
-
-        let tear_down_outcome = run_tear_downs(monitor.listener(), tear_downs).await;
-        summary.add_phase(tear_down_outcome);
-
-        let summary = summary.build();
-
-        monitor.listener().finished(summary.clone()).await;
-
+        let progress = monitor.listener();
+        let result = self.run_with_monitor(set_ups, tests, &progress).await;
         monitor.shutdown().await;
 
-        summary.result
+        result
+    }
+
+    async fn run_with_monitor(self, 
+        set_ups: SetUps,
+        tests: Tests,
+        progress: &ProgressListener,
+    ) -> OverallResult {
+   
+        let workspace_root_dir = find_workspace_root_dir();
+     
+        let mut global_ctx = GlobalContext::new(&workspace_root_dir);
+
+        phases::run(&mut global_ctx,  set_ups, tests, progress).await
     }
 }

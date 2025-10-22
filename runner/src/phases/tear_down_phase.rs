@@ -1,14 +1,13 @@
+
 use std::time::Instant;
 
 use crate::{
-    TearDown,
-    progress::{Phase, PhaseSummary, PhaseSummaryBuilder, ProgressListener, TaskStatus},
-    tasklist::Task,
+    progress::{Phase, PhaseSummary, PhaseSummaryBuilder, ProgressListener, TaskStatus}, TearDowns
 };
 
-pub async fn run_tear_downs(
-    progress: ProgressListener,
-    tear_downs: Vec<(Task, Box<dyn TearDown + 'static>)>,
+pub async fn run(
+    progress: &ProgressListener,
+    mut tear_downs: TearDowns,
 ) -> PhaseSummary {
     let mut tear_down_result = Vec::new();
 
@@ -17,7 +16,8 @@ pub async fn run_tear_downs(
     progress
         .phase_started(Phase::TearDown, tear_downs.len())
         .await;
-    for (task, mut tear_down) in tear_downs.into_iter().rev() {
+
+    while let Some((task, mut tear_down)) =  tear_downs.pop() {
         progress.task_running(Phase::TearDown, task).await;
 
         let start = Instant::now();

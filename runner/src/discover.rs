@@ -1,15 +1,14 @@
 use std::fmt;
 
 use crate::{
-    RegisteredSetUp, SetUpFn,
-    deptable::{Builder, DepTable},
-    tasklist::{Status, Task, TaskList},
+    deptable::{Builder, DepTable}, tasklist::{Status, Task, TaskList}, RegisteredITest, RegisteredSetUp, SetUpFn, TestFn
 };
 
 pub struct SetUps {
     display_order: Vec<Task>,
     pub dep_table: DepTable<SetUpDecl>,
 }
+
 
 impl SetUps {
     pub fn make_task_list(&self) -> TaskList {
@@ -33,6 +32,17 @@ impl fmt::Display for SetUpDecl {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}:{}", self.file, self.line)
     }
+}
+
+pub struct Tests {
+    pub tests: Vec<TestDecl>
+}
+
+pub struct TestDecl {
+    pub test_fn: &'static TestFn,
+    pub name: String,
+    pub file: String,
+    pub line: usize,
 }
 
 fn build_dep_table() -> Result<DepTable<SetUpDecl>, ()> {
@@ -89,4 +99,22 @@ pub fn discover_setups() -> Result<SetUps, ()> {
         display_order,
         dep_table,
     })
+}
+
+
+pub fn discover_tests() -> Result<Tests, ()> {
+    let mut tests = Vec::new();
+
+    for test in inventory::iter::<RegisteredITest> {
+        tests.push(
+            TestDecl { 
+                name: test.name.to_owned(),
+                test_fn: &test.test_fn,
+                file: test.file.to_owned(),
+                line: test.line,
+            }
+        );
+    }
+
+    Ok(Tests {tests})
 }
