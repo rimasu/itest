@@ -1,5 +1,6 @@
 use std::fmt;
 
+mod styles;
 mod status;
 mod monitor;
 mod summary;
