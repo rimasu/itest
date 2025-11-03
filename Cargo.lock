@@ -1470,6 +1470,7 @@ dependencies = [
  "async-channel",
  "async-trait",
  "dashmap",
+ "futures",
  "inventory",
  "itest_macros",
  "libtest-mimic",

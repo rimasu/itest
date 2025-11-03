@@ -1,10 +1,18 @@
-use std::time::Instant;
+use futures::FutureExt;
+use std::{
+    any::Any,
+    panic::{self, AssertUnwindSafe},
+    time::{Duration, Instant},
+};
 
 use async_channel::Receiver;
 use tokio::sync::mpsc;
 
 use crate::{
-    discover::SetUps, progress::{Phase, PhaseSummary, PhaseSummaryBuilder, ProgressListener, TaskStatus}, tasklist::{Status, Task}, Context, GlobalContext, SetUpError, SetUpFn, SetUpResult, TearDown, TearDowns
+    Context, GlobalContext, SetUpError, SetUpFn, SetUpResult, TearDown, TearDowns,
+    discover::SetUps,
+    progress::{Phase, PhaseSummary, PhaseSummaryBuilder, ProgressListener, TaskStatus},
+    tasklist::{Status, Task},
 };
 
 pub async fn run(
@@ -76,31 +84,71 @@ fn launch_set_up_workers(num_workers: usize, progress: ProgressListener) -> SetU
         let run_rx: Receiver<(Task, &'static SetUpFn, Context)> = run_rx.clone();
         let result_tx = result_tx.clone();
         let progress = progress.clone();
-        tokio::spawn(async move {
-            while let Ok((task, set_up, ctx)) = run_rx.recv().await {
-                progress.task_running(Phase::SetUp, task).await;
-                let start = Instant::now();
-                let r = (*set_up)(ctx).await;
-                let duration = start.elapsed();
-                match &r {
-                    Ok(_) => {
-                        progress.task_done(Phase::SetUp, task, duration).await;
-                    }
-                    Err(err) => {
-                        progress
-                            .task_failed(Phase::SetUp, task, duration, format!("{:?}", err))
-                            .await;
-                    }
-                }
-
-                if let Some(err) = result_tx.send((task, r)).await.err() {
-                    eprintln!("Failed to publish result of task {task:?} {err:?}");
-                }
-            }
-        });
+        tokio::spawn(async move { run_set_up_worker(run_rx, result_tx, progress).await });
     }
 
     SetUpWorkers { run_tx, result_rx }
+}
+
+async fn run_set_up_worker(
+    run_rx: Receiver<(Task, &'static SetUpFn, Context)>,
+    result_tx: mpsc::Sender<(Task, SetUpResult)>,
+    progress: ProgressListener,
+) {
+    while let Ok((task, set_up, ctx)) = run_rx.recv().await {
+        let result = run_task(task, set_up, ctx, &progress).await;
+        if let Some(err) = result_tx.send((task, result)).await.err() {
+            eprintln!("Failed to publish result of task {task:?} {err:?}");
+        }
+    }
+}
+
+async fn run_task(
+    task: Task,
+    set_up: &'static SetUpFn,
+    ctx: Context,
+    progress: &ProgressListener,
+) -> SetUpResult {
+
+    progress.task_running(Phase::SetUp, task).await;
+
+    let start = Instant::now();
+    let result = safe_run_task(set_up, ctx).await;
+    let duration = start.elapsed();
+
+    match &result {
+        Ok(_) => {
+            progress.task_done(Phase::SetUp, task, duration).await;
+        }
+        Err(err) => {
+            progress
+                .task_failed(Phase::SetUp, task, duration, format!("{:?}", err))
+                .await;
+        }
+    }
+
+    result
+}
+
+fn panic_err(e: Box<dyn Any + Send>) -> SetUpError {
+    SetUpError::Generic(format!("Setup panicked during execution: {:?}", e))
+}
+
+
+async fn safe_run_task(set_up: &'static SetUpFn, ctx: Context) -> SetUpResult {
+
+    let future = panic::catch_unwind(AssertUnwindSafe(|| (*set_up)(ctx)));
+
+    match future {
+
+        Ok(future) => AssertUnwindSafe(future)
+            .catch_unwind()
+            .await
+            .map_err(|e| panic_err(e))
+            .flatten(),
+
+        Err(e) => Err(panic_err(e)),
+    }
 }
 
 struct SetUpWorkers {

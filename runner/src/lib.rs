@@ -63,9 +63,12 @@ pub struct RegisteredITest {
 }
 inventory::collect!(RegisteredITest);
 
+
+pub type TearDownResult =  Result<(), Box<dyn std::error::Error>>;
+
 #[async_trait]
 pub trait TearDown: Send {
-    async fn tear_down(&mut self) -> Result<(), Box<dyn std::error::Error>>;
+    async fn tear_down(&mut self) -> TearDownResult;
 }
 
 #[derive(Default)]
